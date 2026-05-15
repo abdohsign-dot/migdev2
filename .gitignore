@@ -1,0 +1,57 @@
+# Node / dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Expo / React Native
+.expo/
+.expo-shared/
+web-build/
+dist/
+build/
+.cache/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# React Native / Metro / Watchman
+.metro/
+.watchmanconfig
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Android build outputs / local artifacts
+android/app/build/
+android/build/
+android/.gradle/
+android/.idea/
+android/local.properties
+android/**/*.keystore
+*.jks
+
+# Coverage
+coverage/
+*.lcov
+
+# App-local generated data (adjust as needed)
+migdev/
+
+# Misc
+*.tgz
+*.swp
+*.swo

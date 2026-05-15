@@ -1,0 +1,28 @@
+a# OSX
+#
+.DS_Store
+
+# Android/IntelliJ
+#
+# Build outputs (cover both android/build and e.g. android/app/build, etc.)
+**/build/
+
+# IDE / Gradle caches (cover nested module dirs)
+**/.idea/
+**/.gradle/
+
+# Native build intermediates
+**/.cxx/
+
+# External native build outputs
+.externalNativeBuild/
+
+# Device/emulator screenshots & captures
+captures/
+
+local.properties
+*.iml
+*.hprof
+
+# Bundle artifacts
+*.jsbundle
