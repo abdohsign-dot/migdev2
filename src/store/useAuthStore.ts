@@ -47,6 +47,15 @@ const useAuthStore = create<AuthState>((set) => ({
     setTimeout(() => {
       console.log('🔄 Starting async cleanup...');
       
+      // Clear in-memory sensitive data cache (prevents data leaking between sessions)
+      try {
+        const { clearSensitiveDataCache } = require('../utils/localDatabase');
+        clearSensitiveDataCache();
+        console.log('✅ Sensitive data cache cleared');
+      } catch (error) {
+        console.log('ℹ️ Could not clear sensitive data cache:', error);
+      }
+
       // Clear secure storage cache
       try {
         const { clearAllCache } = require('../utils/offlineAuth');

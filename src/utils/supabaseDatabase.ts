@@ -133,10 +133,20 @@ export const getPackageByRefNumber = async (refNumber: string): Promise<Package 
 export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<Package> => {
   try {
     const db = getDb();
+
+    // Strip JS-model-only fields that don't exist as real DB columns.
+    // The DB schema uses _version (TEXT) and _last_modified — not `version` or `updated_at`.
+    const normalized: any = { ...(packageData as any) };
+    delete normalized._lastModified;
+    delete normalized._last_modified;
+    delete normalized._version;
+    delete normalized.version;     // JS model field — DB column is _version (TEXT)
+    delete normalized.updated_at;  // JS model field — DB column is _last_modified
+
     const { data, error } = await db
       .from('packages')
       .insert({
-        ...packageData,
+        ...normalized,
         _last_modified: new Date().toISOString(),
         _version: '1',
       })
@@ -499,19 +509,10 @@ export const getDriverById = async (id: string): Promise<Driver | null> => {
     
     console.log(`🔍 getDriverById: id=${id}, isUuid=${isUuid}`);
     
-    // First, let's see all drivers to debug
-    const { data: allDrivers, error: allError } = await db.from('drivers').select('*');
-    console.log(`🔍 All drivers in Supabase:`, allDrivers);
-    if (allError) console.error(`❌ Error fetching all drivers:`, allError);
-    
     let query;
     if (isUuid) {
-      // Query by UUID id field
-      console.log(`🔍 Querying by UUID id field`);
       query = db.from('drivers').select('*').eq('id', id);
     } else {
-      // Query by custom_id field
-      console.log(`🔍 Querying by custom_id field`);
       query = db.from('drivers').select('*').eq('custom_id', id);
     }
     

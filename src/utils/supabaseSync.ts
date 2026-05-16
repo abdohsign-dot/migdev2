@@ -387,63 +387,76 @@ export const getDriversLocally = async (): Promise<Driver[]> => {
   }
 };
 
+// Shared write-queue for storeDriverLocally — prevents concurrent read-write races.
+// Both localDatabase.ts and supabaseSync.ts write to the same AsyncStorage key,
+// so we import and reuse localDatabase's queue via the shared storeDriverLocally export.
+// This version is kept for callers within supabaseSync that need the _last_modified normalization.
+let _syncDriverWriteQueue: Promise<void> = Promise.resolve();
+
 export const storeDriverLocally = async (driver: Driver): Promise<void> => {
-  try {
-    const drivers = await getDriversLocally();
-    // Match by ID or custom_id to prevent duplicates when Supabase generates a new UUID
-    // but we already have the local driver stored with custom_id (e.g. DRV-XXXXXX) as its local ID.
-    const existingIndex = drivers.findIndex(d => 
-      d.id === driver.id || 
-      (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
-      (d.id && driver.custom_id && d.id === driver.custom_id) ||
-      (d.custom_id && driver.id && d.custom_id === driver.id)
-    );
-
-    // Normalize old timestamp fields to new standard
-    const normalized: any = { ...driver };
-    if (normalized._lastModified && !normalized.updated_at) {
-      normalized.updated_at = normalized._lastModified;
-    }
-    if (normalized._last_modified && !normalized.updated_at) {
-      normalized.updated_at = normalized._last_modified;
-    }
-    if (normalized._version && !normalized.version) {
-      normalized.version = parseInt(normalized._version) || 1;
-    }
-    delete normalized._lastModified;
-    delete normalized._last_modified;
-    delete normalized._version;
-
-    if (existingIndex >= 0) {
-      // If the incoming record has a UUID id (from Supabase) and the existing local
-      // record has a DRV-XXXXXX id, promote the UUID as the canonical id.
-      // This closes the ID gap so future updates/deletes reach the correct SB row.
-      const existingId = drivers[existingIndex].id;
+  _syncDriverWriteQueue = _syncDriverWriteQueue.then(async () => {
+    try {
+      const drivers = await getDriversLocally();
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      const incomingId = normalized.id;
-      const shouldUpgradeId = incomingId && uuidRegex.test(incomingId) && !uuidRegex.test(existingId);
 
-      drivers[existingIndex] = {
-        ...drivers[existingIndex],
-        ...normalized,
-        // Upgrade to SB UUID if available, otherwise keep existing id
-        id: shouldUpgradeId ? incomingId : (drivers[existingIndex].id || incomingId),
-        updated_at: new Date().toISOString()
-      };
-    } else {
-      drivers.push({
-        ...normalized,
-        created_at: normalized.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        version: normalized.version || 1
+      const existingIndex = drivers.findIndex(d =>
+        d.id === driver.id ||
+        (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
+        (d.id && driver.custom_id && d.id === driver.custom_id) ||
+        (d.custom_id && driver.id && d.custom_id === driver.id)
+      );
+
+      // Normalize old timestamp/version fields from DB column names to JS model names
+      const normalized: any = { ...driver };
+      if (normalized._lastModified && !normalized.updated_at) {
+        normalized.updated_at = normalized._lastModified;
+      }
+      if (normalized._last_modified && !normalized.updated_at) {
+        normalized.updated_at = normalized._last_modified;
+      }
+      if (normalized._version && !normalized.version) {
+        normalized.version = parseInt(normalized._version) || 1;
+      }
+      delete normalized._lastModified;
+      delete normalized._last_modified;
+      delete normalized._version;
+
+      if (existingIndex >= 0) {
+        const existingId = drivers[existingIndex].id;
+        const incomingId = normalized.id;
+        const shouldUpgradeId = incomingId && uuidRegex.test(incomingId) && !uuidRegex.test(existingId);
+
+        drivers[existingIndex] = {
+          ...drivers[existingIndex],
+          ...normalized,
+          id: shouldUpgradeId ? incomingId : (existingId || incomingId),
+          updated_at: new Date().toISOString(),
+        };
+      } else {
+        drivers.push({
+          ...normalized,
+          created_at: normalized.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          version: normalized.version || 1,
+        });
+      }
+
+      // Safety net: collapse any residual duplicates by custom_id before writing
+      const seen = new Set<string>();
+      const deduped = drivers.filter(d => {
+        const key = d.custom_id || d.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
-    }
 
-    await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(drivers));
-  } catch (error) {
-    console.error('Error storing driver locally:', error);
-    throw error;
-  }
+      await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(deduped));
+    } catch (error) {
+      console.error('Error storing driver locally:', error);
+      throw error;
+    }
+  });
+  return _syncDriverWriteQueue;
 };
 
 // SYNC OPERATIONS
@@ -737,16 +750,6 @@ export const processSyncQueue = async (): Promise<void> => {
     await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(failedOps));
     if (failedOps.length > 0) {
       console.warn(`[syncQueue] ⚠️ ${failedOps.length}/${localQueue.length} ops failed and remain in queue for retry`);
-    }
-
-    // IMPORTANT:
-    // In "no user" mode, RLS SELECT will return 0 rows for anon clients (no auth.uid()).
-    // Writes were done with service-role, so we must also read with service-role to reconcile local cache.
-    // However, skip this expensive re-fetch if we only processed a few operations
-    if (localQueue.length <= 5) {
-      console.log('✅ Local sync queue processed successfully (cleared, skipped re-fetch for small batch)');
-      await updateLastSyncTime();
-      return;
     }
 
     const [freshPackages, freshDrivers] = await Promise.all([

@@ -63,26 +63,51 @@ const restoreSensitiveData = (pkg: Partial<Package>, sensitive: Record<string, a
 };
 
 /**
- * Store sensitive data securely
+ * In-memory L1 cache for sensitive package data.
+ *
+ * Motivation: `getPackagesLocally` is called on every render, every screen focus,
+ * and every realtime event — it previously fired one EncryptedStorage.getItem
+ * (encrypted disk read) per package per call. With 50 packages that's 50 reads
+ * on the JS thread every time the list is displayed.
+ *
+ * Strategy: read-through on first access, write-through on save, evict on delete.
+ * The disk (EncryptedStorage) remains the source of truth and is always written to;
+ * the cache only short-circuits the reads.
+ */
+const _sensitiveCache = new Map<string, Record<string, any>>();
+
+/**
+ * Store sensitive data securely (write-through: updates cache AND EncryptedStorage)
  */
 const storeSensitiveData = async (packageId: string, sensitive: Record<string, any>): Promise<void> => {
   if (Object.keys(sensitive).length === 0) return;
   
+  // Update cache immediately so next read is instant
+  _sensitiveCache.set(packageId, sensitive);
+
   try {
     await setSecureItem(`@delivry:pkg_sensitive:${packageId}`, sensitive);
   } catch (error) {
     console.warn(`⚠️ Could not store sensitive data for package ${packageId}:`, error);
-    // Don't throw - continue with regular storage as fallback
+    // Don't throw — local cache still has the data for this session
   }
 };
 
 /**
- * Retrieve sensitive data securely
+ * Retrieve sensitive data securely (read-through: cache hit avoids EncryptedStorage)
  */
 const getSensitiveData = async (packageId: string): Promise<Record<string, any>> => {
+  // L1 cache hit — no disk read needed
+  if (_sensitiveCache.has(packageId)) {
+    return _sensitiveCache.get(packageId)!;
+  }
+
+  // Cache miss — read from EncryptedStorage and populate cache
   try {
     const sensitive = await getSecureItem(`@delivry:pkg_sensitive:${packageId}`);
-    return sensitive || {};
+    const result = sensitive || {};
+    _sensitiveCache.set(packageId, result); // populate for next call
+    return result;
   } catch (error) {
     console.warn(`⚠️ Could not retrieve sensitive data for package ${packageId}:`, error);
     return {};
@@ -90,14 +115,24 @@ const getSensitiveData = async (packageId: string): Promise<Record<string, any>>
 };
 
 /**
- * Remove sensitive data securely
+ * Remove sensitive data securely (evicts from cache AND EncryptedStorage)
  */
 const removeSensitiveDataSecurely = async (packageId: string): Promise<void> => {
+  // Evict from cache first
+  _sensitiveCache.delete(packageId);
+
   try {
     await removeSecureItem(`@delivry:pkg_sensitive:${packageId}`);
   } catch (error) {
     console.warn(`⚠️ Could not remove sensitive data for package ${packageId}:`, error);
   }
+};
+
+/**
+ * Clear the entire sensitive data cache (call on logout or full data reset)
+ */
+export const clearSensitiveDataCache = (): void => {
+  _sensitiveCache.clear();
 };
 
 
@@ -113,45 +148,71 @@ export const getDriversLocally = async (): Promise<Driver[]> => {
   }
 };
 
+// Serializes all storeDriverLocally writes to prevent concurrent read-write races.
+// Without this, two callers (e.g. useFocusEffect sync + auto-flush processSyncQueue)
+// can both read the old array, both fail to find the other's pending write, and
+// both push a new entry — resulting in duplicate drivers.
+let _driverWriteQueue: Promise<void> = Promise.resolve();
+
 export const storeDriverLocally = async (driver: Driver): Promise<void> => {
-  try {
-    const drivers = await getDriversLocally();
+  _driverWriteQueue = _driverWriteQueue.then(async () => {
+    try {
+      const drivers = await getDriversLocally();
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-    // Check if driver already exists
-    // Match by ID or custom_id to prevent duplicates when Supabase generates a new UUID
-    // but we already have the local driver stored with custom_id (e.g. DRV-XXXXXX) as its local ID.
-    const existingIndex = drivers.findIndex(d => 
-      d.id === driver.id || 
-      (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
-      (d.id && driver.custom_id && d.id === driver.custom_id) ||
-      (d.custom_id && driver.id && d.custom_id === driver.id)
-    );
+      // Match by id, custom_id cross-match (handles DRV-XXXXXX ↔ UUID bridge)
+      const existingIndex = drivers.findIndex(d =>
+        d.id === driver.id ||
+        (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
+        (d.id && driver.custom_id && d.id === driver.custom_id) ||
+        (d.custom_id && driver.id && d.custom_id === driver.id)
+      );
 
-    if (existingIndex >= 0) {
-      // Update existing driver
-      drivers[existingIndex] = {
-        ...drivers[existingIndex],
-        ...driver,
-        updated_at: new Date().toISOString(),
-        version: (driver.version ?? 1) + 1
-      };
-    } else {
-      // Add new driver
-      drivers.push({
-        ...driver,
-        created_at: driver.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        version: 1
+      // When the incoming record has a SB UUID, prefer it as the canonical id
+      const existingId = existingIndex >= 0 ? drivers[existingIndex].id : null;
+      const shouldUpgradeId =
+        driver.id &&
+        uuidRegex.test(driver.id) &&
+        existingId != null &&
+        !uuidRegex.test(existingId);
+
+      if (existingIndex >= 0) {
+        drivers[existingIndex] = {
+          ...drivers[existingIndex],
+          ...driver,
+          id: shouldUpgradeId ? driver.id : (existingId || driver.id),
+          updated_at: new Date().toISOString(),
+          version: (driver.version ?? 1) + 1,
+        };
+      } else {
+        drivers.push({
+          ...driver,
+          created_at: driver.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          version: 1,
+        });
+      }
+
+      // Safety net: deduplicate entire array by custom_id before writing
+      // (collapses any residual duplicates from previous runs)
+      const seen = new Set<string>();
+      const deduped = drivers.filter(d => {
+        const key = d.custom_id || d.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
-    }
 
-    await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(drivers));
-    console.log(`💾 Driver ${driver.id} stored locally`);
-  } catch (error) {
-    console.error('Error storing driver locally:', error);
-    throw error;
-  }
+      await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(deduped));
+      if (__DEV__) console.log(`💾 Driver ${driver.id} stored locally`);
+    } catch (error) {
+      console.error('Error storing driver locally:', error);
+      throw error;
+    }
+  });
+  return _driverWriteQueue;
 };
+
 
 export const removeDriverLocally = async (driverId: string): Promise<void> => {
   try {

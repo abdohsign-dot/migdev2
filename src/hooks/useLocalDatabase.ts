@@ -260,9 +260,11 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     try {
       const timestamp = new Date().toISOString();
       
+      // Read all packages ONCE before the loop (not once per package)
+      const localPkgs = await getPackagesLocally(undefined, true);
+
       // Update all packages locally first
       for (const pkgId of packageIds) {
-        const localPkgs = await getPackagesLocally(undefined, true);
         const pkgIndex = localPkgs.findIndex(p => p.id === pkgId);
         
         if (pkgIndex >= 0) {
