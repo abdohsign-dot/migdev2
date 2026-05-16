@@ -52,6 +52,31 @@ const SYNC_QUEUE_KEY = '@delivry:syncQueue';
 const LAST_SYNC_KEY = '@delivry:lastSync';
 const MIGRATION_COMPLETED_KEY = '@delivry:supabaseMigrationCompleted';
 
+const ADMIN_SYNC_QUEUE_KEY = '@admin:syncQueue';
+const ADMIN_LAST_SYNC_KEY = '@admin:lastSync';
+const getDriverSyncQueueKey = (driverId: string) => `@driver:${driverId}:syncQueue`;
+const getDriverLastSyncKey = (driverId: string) => `@driver:${driverId}:lastSync`;
+const getSyncQueueStorageKey = (driverId?: string) =>
+  driverId ? getDriverSyncQueueKey(driverId) : ADMIN_SYNC_QUEUE_KEY;
+const getLastSyncStorageKey = (driverId?: string) =>
+  driverId ? getDriverLastSyncKey(driverId) : ADMIN_LAST_SYNC_KEY;
+
+const resolveDriverStorageId = async (driverId?: string): Promise<string | undefined> => {
+  if (!driverId) return undefined;
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(driverId)) {
+    return driverId;
+  }
+
+  const { getDriversLocally } = require('./localDatabase') as {
+    getDriversLocally: () => Promise<Driver[]>;
+  };
+  const localDrivers = await getDriversLocally();
+  const matched = localDrivers.find((d: Driver) => d.custom_id === driverId || d.id === driverId);
+  return matched?.id;
+};
+
 // LOCAL STORAGE OPERATIONS (unchanged for compatibility)
 
 export const getPackagesLocally = async (): Promise<Package[]> => {
@@ -469,12 +494,12 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
 // Debounce handle for auto-flush — batches rapid back-to-back enqueues into one flush
 let _autoFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
-const _scheduleAutoFlush = () => {
+const _scheduleAutoFlush = (driverId?: string) => {
   if (_autoFlushTimer) clearTimeout(_autoFlushTimer);
   _autoFlushTimer = setTimeout(() => {
     _autoFlushTimer = null;
     // Fire-and-forget: flush the queue to Supabase immediately after any write
-    processSyncQueue().catch((e) =>
+    processSyncQueue(driverId).catch((e) =>
       console.warn('[autoFlush] processSyncQueue error:', e)
     );
   }, 300); // 300 ms debounce — batches rapid bulk writes
@@ -483,11 +508,14 @@ const _scheduleAutoFlush = () => {
 /**
  * Add operation to sync queue
  */
-export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'timestamp' | 'synced'>): Promise<void> => {
+export const addToSyncQueue = async (
+  operation: Omit<SyncOperation, 'id' | 'timestamp' | 'synced'>,
+  driverId?: string
+): Promise<void> => {
   try {
     // Always enqueue locally for offline support.
     // Even if user/session is missing, drivers/admin can still process the local queue.
-    const queue = await getSyncQueue();
+    const queue = await getSyncQueue(driverId);
     const newOperation: SyncOperation = {
       ...operation,
       id: Date.now().toString(),
@@ -495,7 +523,7 @@ export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'time
       synced: false,
     };
     queue.push(newOperation);
-    await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
+    await AsyncStorage.setItem(getSyncQueueStorageKey(driverId), JSON.stringify(queue));
 
     // If we have a user, also enqueue into Supabase sync operations table.
     const user = await getCurrentUser();
@@ -510,7 +538,7 @@ export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'time
     }
 
     // Auto-flush: immediately push this change to Supabase (debounced to batch bulk writes)
-    _scheduleAutoFlush();
+    _scheduleAutoFlush(driverId);
   } catch (error) {
     console.error('Error adding to sync queue:', error);
     // Don't throw error - sync queue should be resilient
@@ -520,9 +548,10 @@ export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'time
 /**
  * Get sync queue from local storage
  */
-export const getSyncQueue = async (): Promise<SyncOperation[]> => {
+export const getSyncQueue = async (driverId?: string): Promise<SyncOperation[]> => {
   try {
-    const data = await AsyncStorage.getItem(SYNC_QUEUE_KEY);
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    const data = await AsyncStorage.getItem(getSyncQueueStorageKey(storageDriverId));
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
@@ -532,9 +561,10 @@ export const getSyncQueue = async (): Promise<SyncOperation[]> => {
 /**
  * Get last sync time
  */
-export const getLastSyncTime = async (): Promise<string | null> => {
+export const getLastSyncTime = async (driverId?: string): Promise<string | null> => {
   try {
-    const data = await AsyncStorage.getItem(LAST_SYNC_KEY);
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    const data = await AsyncStorage.getItem(getLastSyncStorageKey(storageDriverId));
     return data;
   } catch {
     return null;
@@ -544,9 +574,10 @@ export const getLastSyncTime = async (): Promise<string | null> => {
 /**
  * Update last sync time
  */
-export const updateLastSyncTime = async (): Promise<void> => {
+export const updateLastSyncTime = async (driverId?: string): Promise<void> => {
   try {
-    await AsyncStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    await AsyncStorage.setItem(getLastSyncStorageKey(storageDriverId), new Date().toISOString());
   } catch (error) {
     console.error('Error updating last sync time:', error);
   }
@@ -613,10 +644,10 @@ export const syncDriversFromSupabase = async (): Promise<void> => {
 /**
  * Process sync queue (upload local changes to Supabase)
  */
-export const processSyncQueue = async (): Promise<void> => {
+export const processSyncQueue = async (driverId?: string): Promise<void> => {
   try {
     // Prefer processing from Supabase sync_operations when user exists,
-    // but also support processing the local @delivry:syncQueue when user is missing.
+    // but also support processing the local role-partitioned queue when user is missing.
     const user = await getCurrentUser();
 
     if (user) {
@@ -651,13 +682,13 @@ export const processSyncQueue = async (): Promise<void> => {
     }
 
     // No user: process local queue only.
-    const localQueue = await getSyncQueue();
+    const localQueue = await getSyncQueue(driverId);
     if (localQueue.length === 0) {
       console.log('No local sync queue operations to process');
       return;
     }
 
-    console.log(`Processing ${localQueue.length} local sync operations (no user mode)`);
+    console.log(`Processing ${localQueue.length} local sync operations (no user mode, driverId=${driverId})`);
 
     // Apply operations using service-role package update/create/delete.
     // Track failures so we can re-queue them instead of silently discarding.
@@ -752,7 +783,7 @@ export const processSyncQueue = async (): Promise<void> => {
     }
 
     // Only keep failed ops in the queue; successfully processed ones are dropped.
-    await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(failedOps));
+    await AsyncStorage.setItem(getSyncQueueStorageKey(driverId), JSON.stringify(failedOps));
     if (failedOps.length > 0) {
       console.warn(`[syncQueue] ⚠️ ${failedOps.length}/${localQueue.length} ops failed and remain in queue for retry`);
     }
@@ -776,7 +807,7 @@ export const processSyncQueue = async (): Promise<void> => {
       })(),
     ]);
 
-    await updateLastSyncTime();
+    await updateLastSyncTime(driverId);
     console.log('✅ Local sync queue processed successfully (cleared)');
   } catch (error) {
     console.error('Error processing sync queue:', error);

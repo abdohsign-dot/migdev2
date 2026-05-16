@@ -9,10 +9,36 @@ import { isPreStoredDriverId } from '../config/credentials';
 import { setSecureItem, getSecureItem, removeSecureItem } from './secureStorage';
 
 // Storage Keys
-const PACKAGES_KEY = '@delivry:packages';
-const DRIVERS_KEY = '@delivry:drivers';
-const SYNC_QUEUE_KEY = '@delivry:syncQueue';
-const LAST_SYNC_KEY = '@delivry:lastSync';
+const ADMIN_PACKAGES_KEY = '@admin:packages';
+const ADMIN_DRIVERS_KEY = '@admin:drivers';
+const ADMIN_SYNC_QUEUE_KEY = '@admin:syncQueue';
+const ADMIN_LAST_SYNC_KEY = '@admin:lastSync';
+
+const getDriverPackagesKey = (driverId: string) => `@driver:${driverId}:packages`;
+const getDriverSyncQueueKey = (driverId: string) => `@driver:${driverId}:syncQueue`;
+const getDriverLastSyncKey = (driverId: string) => `@driver:${driverId}:lastSync`;
+
+const getPackageStorageKey = (driverId?: string) =>
+  driverId ? getDriverPackagesKey(driverId) : ADMIN_PACKAGES_KEY;
+
+const getSyncQueueStorageKey = (driverId?: string) =>
+  driverId ? getDriverSyncQueueKey(driverId) : ADMIN_SYNC_QUEUE_KEY;
+
+const getLastSyncStorageKey = (driverId?: string) =>
+  driverId ? getDriverLastSyncKey(driverId) : ADMIN_LAST_SYNC_KEY;
+
+const resolveDriverStorageId = async (driverId?: string): Promise<string | undefined> => {
+  if (!driverId) return undefined;
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(driverId)) {
+    return driverId;
+  }
+
+  const localDrivers = await getDriversLocally();
+  const matched = localDrivers.find(d => d.custom_id === driverId || d.id === driverId);
+  return matched?.id;
+};
 
 // Sensitive fields that should be encrypted
 const SENSITIVE_FIELDS = [
@@ -135,13 +161,71 @@ export const clearSensitiveDataCache = (): void => {
   _sensitiveCache.clear();
 };
 
+const getPackagesFromStorage = async (driverId?: string): Promise<Package[]> => {
+  try {
+    const data = await AsyncStorage.getItem(getPackageStorageKey(driverId));
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writePackagesToStorage = async (packages: Package[], driverId?: string): Promise<void> => {
+  await AsyncStorage.setItem(getPackageStorageKey(driverId), JSON.stringify(packages));
+};
+
+const upsertPackageInStorage = async (pkg: Package, driverId?: string): Promise<void> => {
+  const packages = await getPackagesFromStorage(driverId);
+  const index = packages.findIndex(p => p.id === pkg.id);
+  const now = new Date().toISOString();
+
+  if (index > -1) {
+    packages[index] = {
+      ...packages[index],
+      ...pkg,
+      updated_at: pkg.updated_at || now,
+      version: (pkg.version ?? packages[index].version ?? 1) + 1,
+    };
+  } else {
+    packages.push({
+      ...pkg,
+      created_at: pkg.created_at || now,
+      updated_at: pkg.updated_at || now,
+      version: pkg.version || 1,
+    });
+  }
+
+  await writePackagesToStorage(packages, driverId);
+};
+
+const removePackageFromStorage = async (packageId: string, driverId?: string): Promise<void> => {
+  const packages = await getPackagesFromStorage(driverId);
+  const filtered = packages.filter(pkg => pkg.id !== packageId);
+  await writePackagesToStorage(filtered, driverId);
+};
+
+const syncPackageToPartitions = async (pkg: Package): Promise<void> => {
+  await upsertPackageInStorage(pkg); // Admin partition
+  if (pkg.assigned_to) {
+    await upsertPackageInStorage(pkg, pkg.assigned_to);
+  }
+};
+
+const deletePackageFromAllPartitions = async (packageId: string): Promise<void> => {
+  const adminPackages = await getPackagesFromStorage();
+  const deleted = adminPackages.find(p => p.id === packageId);
+  await removePackageFromStorage(packageId);
+  if (deleted?.assigned_to) {
+    await removePackageFromStorage(packageId, deleted.assigned_to);
+  }
+};
 
 
 // Basic package retrieval (overridden below with driver filtering)
 
 export const getDriversLocally = async (): Promise<Driver[]> => {
   try {
-    const data = await AsyncStorage.getItem(DRIVERS_KEY);
+    const data = await AsyncStorage.getItem(ADMIN_DRIVERS_KEY);
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
@@ -203,7 +287,7 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
         return true;
       });
 
-      await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(deduped));
+      await AsyncStorage.setItem(ADMIN_DRIVERS_KEY, JSON.stringify(deduped));
       if (__DEV__) console.log(`💾 Driver ${driver.id} stored locally`);
     } catch (error) {
       console.error('Error storing driver locally:', error);
@@ -218,7 +302,7 @@ export const removeDriverLocally = async (driverId: string): Promise<void> => {
   try {
     const drivers = await getDriversLocally();
     const filteredDrivers = drivers.filter(d => d.id !== driverId);
-    await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(filteredDrivers));
+    await AsyncStorage.setItem(ADMIN_DRIVERS_KEY, JSON.stringify(filteredDrivers));
     console.log(`🗑️ Driver ${driverId} removed from local storage`);
   } catch (error) {
     console.error('Error removing driver locally:', error);
@@ -263,30 +347,12 @@ export const syncDriversFromFirestore = async (): Promise<void> => {
 // updatePackage implementation moved below with enhanced functionality
 
 export const upsertPackageLocally = async (pkg: Package): Promise<void> => {
-  const packages = await getPackagesLocally(undefined, true);
-  const index = packages.findIndex(p => p.id === pkg.id);
-  if (index > -1) {
-    packages[index] = {
-      ...pkg,
-      updated_at: new Date().toISOString(),
-      version: (pkg.version ?? 1) + 1
-    };
-  } else {
-    packages.push({
-      ...pkg,
-      created_at: pkg.created_at || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      version: 1
-    });
-  }
-  await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
+  await syncPackageToPartitions(pkg);
 };
 
 export const deletePackageLocally = async (packageId: string): Promise<void> => {
   try {
-    const packages = await getPackagesLocally(undefined, true);
-    const filteredPackages = packages.filter(p => p.id !== packageId);
-    await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(filteredPackages));
+    await deletePackageFromAllPartitions(packageId);
     console.log(`🗑️ Package ${packageId} deleted from local storage`);
   } catch (error) {
     console.error('Error deleting package locally:', error);
@@ -294,9 +360,10 @@ export const deletePackageLocally = async (packageId: string): Promise<void> => 
   }
 };
 
-export const getLastSyncTime = async (): Promise<string> => {
+export const getLastSyncTime = async (driverId?: string): Promise<string> => {
   try {
-    const time = await AsyncStorage.getItem(LAST_SYNC_KEY);
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    const time = await AsyncStorage.getItem(getLastSyncStorageKey(storageDriverId));
     return time || '';
   } catch {
     return '';
@@ -321,10 +388,26 @@ export const getPackagesLocally = async (
   offset: number = 0
 ): Promise<Package[]> => {
   try {
-    const data = await AsyncStorage.getItem(PACKAGES_KEY);
-    let allPackages: Package[] = data ? JSON.parse(data) : [];
+    let storageDriverId = driverId;
 
-    console.log(`📦 getPackagesLocally: driverId=${driverId}, includeArchived=${includeArchived}, limit=${limit}, offset=${offset}, totalPackages=${allPackages.length}`);
+    if (driverId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const isUuid = uuidRegex.test(driverId);
+
+      if (!isUuid) {
+        const localDrivers = await getDriversLocally();
+        const matched = localDrivers.find(d => d.custom_id === driverId || d.id === driverId);
+        if (!matched?.id) {
+          console.log(`🚚 Driver ${driverId} not found locally; returning 0 packages`);
+          return [];
+        }
+        storageDriverId = matched.id;
+      }
+    }
+
+    let allPackages: Package[] = await getPackagesFromStorage(storageDriverId);
+
+    console.log(`📦 getPackagesLocally: driverId=${driverId}, storageDriverId=${storageDriverId}, includeArchived=${includeArchived}, limit=${limit}, offset=${offset}, totalPackages=${allPackages.length}`);
 
     // Restore sensitive data for all packages
     allPackages = await Promise.all(
@@ -336,21 +419,7 @@ export const getPackagesLocally = async (
 
     // If driverId provided, filter packages assigned to this driver
     if (driverId) {
-      // Resolve custom_id (DRV-xxxx) -> UUID (drivers.id) if needed
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      const isUuid = uuidRegex.test(driverId);
-
-      let assignedToUuid = driverId;
-
-      if (!isUuid) {
-        const localDrivers = await getDriversLocally();
-        const matched = localDrivers.find(d => d.custom_id === driverId || d.id === driverId);
-        if (!matched?.id) {
-          console.log(`🚚 Driver ${driverId} not found locally; returning 0 packages`);
-          return [];
-        }
-        assignedToUuid = matched.id;
-      }
+      const assignedToUuid = storageDriverId!;
 
       const filtered = allPackages.filter(
         pkg =>
@@ -401,15 +470,11 @@ export const getPackageCountLocally = async (
   includeArchived: boolean = false
 ): Promise<number> => {
   try {
-    const data = await AsyncStorage.getItem(PACKAGES_KEY);
-    const allPackages: Package[] = data ? JSON.parse(data) : [];
+    let storageDriverId = driverId;
 
-    // If driverId provided, count packages assigned to this driver
     if (driverId) {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       const isUuid = uuidRegex.test(driverId);
-
-      let assignedToUuid = driverId;
 
       if (!isUuid) {
         const localDrivers = await getDriversLocally();
@@ -417,8 +482,15 @@ export const getPackageCountLocally = async (
         if (!matched?.id) {
           return 0;
         }
-        assignedToUuid = matched.id;
+        storageDriverId = matched.id;
       }
+    }
+
+    const allPackages: Package[] = await getPackagesFromStorage(storageDriverId);
+
+    // If driverId provided, count packages assigned to this driver
+    if (driverId) {
+      const assignedToUuid = storageDriverId!;
 
       const count = allPackages.filter(
         pkg =>
@@ -440,7 +512,7 @@ export const getPackageCountLocally = async (
 };
 
 // Function to filter out packages with invalid UUIDs
-const filterValidUUIDPackages = async (packages: Package[]): Promise<Package[]> => {
+const filterValidUUIDPackages = async (packages: Package[], driverId?: string): Promise<Package[]> => {
   const validPackages = packages.filter(pkg => isValidUUID(pkg.id));
   const invalidPackages = packages.filter(pkg => !isValidUUID(pkg.id));
   
@@ -449,7 +521,7 @@ const filterValidUUIDPackages = async (packages: Package[]): Promise<Package[]> 
       invalidPackages.map(p => p.id));
     
     // Update local storage to remove invalid packages
-    await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(validPackages));
+    await writePackagesToStorage(validPackages, driverId);
   }
   
   return validPackages;
@@ -521,22 +593,19 @@ const generateUUID = (): string => {
 // Local-first package creation with immediate sync of new package only
 export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<void> => {
   try {
-    const packages = await getPackagesLocally(undefined, true);
-    // Generate proper UUID for Supabase compatibility
     const newPackage: Package = {
       ...packageData,
       id: generateUUID(),
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      version: 1
+      version: 1,
     };
 
     // Extract and encrypt sensitive data
     const sensitive = extractSensitiveData(newPackage);
     const sanitized = removeSensitiveData(newPackage);
 
-    // Save locally first (guaranteed to work) - store without sensitive data
-    packages.push(sanitized as Package);
-    await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
+    await syncPackageToPartitions(sanitized as Package);
     console.log(`💾 Package ${newPackage.id} saved locally (sensitive data encrypted)`);
 
     // Store sensitive data securely
@@ -579,29 +648,31 @@ export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_a
 };
 
 // Sync queue management
-export const getSyncQueue = async (): Promise<SyncOperation[]> => {
+export const getSyncQueue = async (driverId?: string): Promise<SyncOperation[]> => {
   try {
-    const data = await AsyncStorage.getItem(SYNC_QUEUE_KEY);
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    const data = await AsyncStorage.getItem(getSyncQueueStorageKey(storageDriverId));
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
   }
 };
 
-export const addToSyncQueue = async (operation: SyncOperation): Promise<void> => {
+export const addToSyncQueue = async (operation: SyncOperation, driverId?: string): Promise<void> => {
   try {
-    // Use Supabase sync queue
+    // Use Supabase sync queue with optional driver partitioning
     const { addToSyncQueue: supabaseAddToQueue } = require('./supabaseSync');
-    await supabaseAddToQueue(operation);
+    await supabaseAddToQueue(operation, driverId);
     console.log('📝 Added to Supabase sync queue');
   } catch (error) {
     console.error('Error adding to sync queue:', error);
   }
 };
 
-export const markSyncItemAsSynced = async (operationId: string): Promise<void> => {
+export const markSyncItemAsSynced = async (operationId: string, driverId?: string): Promise<void> => {
   try {
-    const queue = await getSyncQueue();
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    const queue = await getSyncQueue(storageDriverId);
     const updatedQueue = queue.map(op =>
       op.id === operationId ? { ...op, synced: true } : op
     );
@@ -610,17 +681,17 @@ export const markSyncItemAsSynced = async (operationId: string): Promise<void> =
     const filteredQueue = updatedQueue.filter(op =>
       !op.synced || op.timestamp > oneHourAgo
     );
-    await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(filteredQueue));
+    await AsyncStorage.setItem(getSyncQueueStorageKey(storageDriverId), JSON.stringify(filteredQueue));
   } catch (error) {
     console.error('Error marking sync item:', error);
   }
 };
 
-export const processSyncQueue = async (): Promise<void> => {
+export const processSyncQueue = async (driverId?: string): Promise<void> => {
   try {
     // Use Supabase sync queue processing
     const { processSyncQueue: supabaseProcessQueue } = require('./supabaseSync');
-    await supabaseProcessQueue();
+    await supabaseProcessQueue(driverId);
     console.log('✅ Supabase sync queue processed');
   } catch (error) {
     console.error('Error processing Supabase sync queue:', error);
@@ -636,18 +707,17 @@ export const updatePackage = async (packageId: string, updates: Partial<Package>
     const pkgIndex = packages.findIndex(p => p.id === packageId);
 
     if (pkgIndex >= 0) {
-      const updatedPackage = {
+      const updatedPackage: Package = {
         ...packages[pkgIndex],
         ...updates,
         _last_modified: new Date().toISOString(),
-      };
+      } as Package;
 
       // Extract and encrypt sensitive data
       const sensitive = extractSensitiveData(updatedPackage);
       const sanitized = removeSensitiveData(updatedPackage);
 
-      packages[pkgIndex] = sanitized as Package;
-      await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
+      await syncPackageToPartitions(sanitized as Package);
       console.log(`💾 Package ${packageId} updated locally (sensitive data encrypted)`);
 
       // Store sensitive data securely

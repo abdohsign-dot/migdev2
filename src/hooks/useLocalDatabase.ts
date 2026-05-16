@@ -59,8 +59,10 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   // Real-time listener for package changes using Supabase
   useEffect(() => {
     try {
-      const { listenToPackages, listenToDriverPackages, unsubscribe } = require('../utils/supabaseRealtime');
+      const { listenToPackages, listenToDriverPackages, cleanupListeners, unsubscribe } = require('../utils/supabaseRealtime');
       
+      // Remove any stale admin/driver subscriptions before creating a fresh one.
+      cleanupListeners('all');
       let channel: any = null;
 
       const handleRealtimeUpdate = async (payload: any) => {
@@ -140,14 +142,14 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
         const localPackages = await getPackagesLocally(undefined, true); // includeArchived=true
         setPackages(localPackages);
         setDrivers(await getDriversLocally());
-        setLastSync(await getLastSyncTime());
+        setLastSync(await getLastSyncTime(driverId));
         return;
       }
 
       const [localPackages, localDrivers, syncTime] = await Promise.all([
         getPackagesLocally(driverId, isAdmin), // Admin gets all packages including archived
         getDriversLocally(),
-        getLastSyncTime(),
+        getLastSyncTime(driverId),
       ]);
 
       // Hard gate: if non-admin and driverId exists, never keep unscoped packages in state.
@@ -171,7 +173,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
    */
   const checkSyncQueue = async () => {
     try {
-      const queue = await getSyncQueue();
+      const queue = await getSyncQueue(driverId);
       setPendingSyncCount(queue.length);
     } catch (error) {
       console.error('Error checking sync queue:', error);
@@ -240,7 +242,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
           data: { id: packageId, updates },
           timestamp: new Date().toISOString(),
           synced: false
-        });
+        }, driverId);
         console.log(`📝 Package ${packageId} queued for Supabase sync`);
       } else {
         console.log(`🔒 Package ${packageId} updated locally only (pre-stored driver: ${driverId})`);
@@ -302,7 +304,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
           },
           timestamp: new Date().toISOString(),
           synced: false
-        });
+        }, driverId);
       }
     } catch (error) {
       console.error('Error assigning packages:', error);
@@ -359,7 +361,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
           },
           timestamp: new Date().toISOString(),
           synced: false
-        });
+        }, driverId);
       }
     } catch (error) {
       console.error('Error deassigning packages:', error);
@@ -465,7 +467,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        await processSyncQueue();
+        await processSyncQueue(driverId);
         console.log('🔄 Sync queue processed (periodic)');
       } catch (error) {
         console.error('Error in periodic sync queue processing:', error);
@@ -473,7 +475,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, []);
+  }, [driverId]);
 
   const archivePackages = async (packageIds: string[]) => {
     try {
@@ -513,7 +515,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
           },
           timestamp: new Date().toISOString(),
           synced: false
-        });
+        }, driverId);
       }
     } catch (error) {
       console.error('Error archiving packages:', error);
@@ -559,7 +561,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
           },
           timestamp: new Date().toISOString(),
           synced: false
-        });
+        }, driverId);
       }
     } catch (error) {
       console.error('Error unarchiving packages:', error);
@@ -604,7 +606,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
             },
             timestamp: new Date().toISOString(),
             synced: false
-          });
+          }, driverId);
         }
         console.log(`⚠️ Queued ${packageIds.length} packages for deletion`);
       }

@@ -25,6 +25,52 @@ const DEFAULT_BACKPRESSURE_CONFIG: BackpressureConfig = {
   queueSize: 100,            // Max 100 items in queue
 };
 
+const ADMIN_CHANNEL_KEYS = new Set<string>([
+  'packages-changes',
+  'drivers-changes',
+  'active-drivers-changes',
+  'package-status-changes',
+]);
+
+const isAdminChannel = (channelName: string): boolean => {
+  return (
+    ADMIN_CHANNEL_KEYS.has(channelName) ||
+    channelName.startsWith('sync-operations-')
+  );
+};
+
+const isDriverChannel = (channelName: string): boolean => {
+  return (
+    channelName.startsWith('driver-packages-') ||
+    channelName.startsWith('sync-operations-')
+  );
+};
+
+export const cleanupListeners = (role: 'admin' | 'driver' | 'all' = 'all'): void => {
+  const keysToRemove: string[] = [];
+
+  activeSubscriptions.forEach((_, channelName) => {
+    if (role === 'all') {
+      keysToRemove.push(channelName);
+      return;
+    }
+
+    if (role === 'admin' && isAdminChannel(channelName)) {
+      keysToRemove.push(channelName);
+      return;
+    }
+
+    if (role === 'driver' && isDriverChannel(channelName)) {
+      keysToRemove.push(channelName);
+      return;
+    }
+  });
+
+  keysToRemove.forEach((channelName) => unsubscribe(channelName));
+};
+
+export const cleanupAllListeners = (): void => cleanupListeners('all');
+
 // PACKAGES REAL-TIME LISTENERS
 
 /**
@@ -519,3 +565,9 @@ export const useRealtimeDriverPackages = (
     unsubscribe: () => unsubscribe(`driver-packages-${driverId}`),
   };
 };
+
+export const listenToAdminPackages = listenToPackages;
+export const listenToDriverMissions = listenToDriverPackages;
+export const listenToAdminDrivers = listenToDrivers;
+export const listenToAdminActiveDrivers = listenToActiveDrivers;
+export const listenToUserSyncOperations = listenToSyncOperations;
