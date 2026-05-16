@@ -84,17 +84,40 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     })));
   }, [driverId, localPackages]);
 
-  // Sort packages by status
-  const packages = [...localPackages].sort((a, b) => {
-    const statusOrder: Record<string, number> = {
-      'Assigned': 1,
-      'In Transit': 2,
-      'Returned': 3,
-      'Delivered': 4,
-      'Archived': 5
-    };
-    return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
-  });
+  // Sort packages by next delivery deadline (limit_date + optional limit_time)
+  const getDeadlineMillis = (pkg: any): number | null => {
+    if (!pkg?.limit_date) return null;
+    const limitDateStr = String(pkg.limit_date);
+    const timeStr = pkg.limit_time ? String(pkg.limit_time) : '23:59';
+
+    const [yyyy, mm, dd] = limitDateStr.includes('T')
+      ? limitDateStr.split('T')[0].split('-').map(Number)
+      : limitDateStr.split('/').length === 3
+        ? (() => {
+            const [d, m, y] = limitDateStr.split('/').map(Number);
+            return [y, m, d];
+          })()
+        : limitDateStr.split('-').map(Number);
+
+    const [HH, MM] = timeStr.split(':').map((n: string) => Number(n));
+    const deadline = new Date(yyyy, (mm || 1) - 1, dd || 1, HH || 0, MM || 0, 0, 0);
+    return Number.isNaN(deadline.getTime()) ? null : deadline.getTime();
+  };
+
+  const packages = React.useMemo(() => {
+    return [...localPackages].sort((a: any, b: any) => {
+      const aMs = getDeadlineMillis(a);
+      const bMs = getDeadlineMillis(b);
+      if (aMs === null && bMs === null) return 0;
+      if (aMs === null) return 1;
+      if (bMs === null) return -1;
+      if (aMs < bMs) return -1;
+      if (aMs > bMs) return 1;
+      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return aCreated - bCreated;
+    });
+  }, [localPackages]);
 
   // Filter packages based on hide completed tasks setting
   const filteredPackages = hideCompletedTasks 
