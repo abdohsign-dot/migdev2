@@ -356,6 +356,11 @@ export const storePackageLocally = async (pkg: Package): Promise<void> => {
     delete normalized._last_modified;
     delete normalized._version;
 
+    // Ensure local model uses `undefined` for unassigned fields so driver
+    // filters like `pkg.assigned_to === assignedToUuid` behave correctly.
+    if (normalized.assigned_to === null) normalized.assigned_to = undefined;
+    if (normalized.assigned_at === null) normalized.assigned_at = undefined;
+
     if (existingIndex >= 0) {
       packages[existingIndex] = {
         ...packages[existingIndex],

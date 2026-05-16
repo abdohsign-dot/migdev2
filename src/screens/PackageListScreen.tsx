@@ -67,6 +67,12 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
   };
 
   const getReceiptText = (pkg: any) => {
+    const formatWeight = (w: any) => {
+      if (!w && w !== 0) return 'N/A';
+      const s = String(w).trim();
+      if (s === '') return 'N/A';
+      return /kg$/i.test(s) ? s : `${s} kg`;
+    };
     return `----------------------------------
 DÉTAILS DU COLIS
 ----------------------------------
@@ -91,7 +97,7 @@ GPS       : ${pkg.gps_lat && pkg.gps_lng ? `${pkg.gps_lat}, ${pkg.gps_lng}` : 'N
 
 DÉTAILS COLIS
 -------------
-Poids     : ${pkg.weight || 'N/A'}
+Poids     : ${formatWeight(pkg.weight)}
 Prix      : ${pkg.is_paid ? 'Payé' : ((pkg.price || 0) + ' DH')}
 Statut    : ${statusLabels[pkg.status] || pkg.status}
 Date lim. : ${formatDate(pkg.limit_date) || 'N/A'}${pkg.limit_time ? ` ${pkg.limit_time}` : ''}
@@ -287,7 +293,7 @@ GPS       : ${selectedPkg.gps_lat && selectedPkg.gps_lng ? `${selectedPkg.gps_la
 
 DÉTAILS COLIS
 -------------
-Poids     : ${selectedPkg.weight || 'N/A'}
+  Poids     : ${formatWeight(selectedPkg.weight)}
 Prix      : ${selectedPkg.is_paid ? 'Payé' : ((selectedPkg.price || 0) + ' DH')}
 Statut    : ${statusLabels[selectedPkg.status] || selectedPkg.status}
 Date lim. : ${formatDate(selectedPkg.limit_date) || 'N/A'}${selectedPkg.limit_time ? ` ${selectedPkg.limit_time}` : ''}

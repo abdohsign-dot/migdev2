@@ -20,6 +20,45 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
   const [assigning, setAssigning] = useState(false);
   const [unsubscribeFn, setUnsubscribeFn] = useState<(() => void) | null>(null);
 
+  // Build merged driver list from local drivers + active pre-stored drivers.
+  // Prioritizes locally-stored drivers (real data) and only adds pre-stored
+  // stubs when no local driver with the same id exists.
+  const buildDriverList = (localDrivers: any[]) => {
+    const activeStored = getActiveDrivers();
+    const storedWithDetails = activeStored.map(d => ({
+      ...d,
+      name: `Livreur ${d.id.split('-')[1]}`,
+      vehicle_type: 'Non spécifié',
+      phone: 'Non spécifié',
+      pin_code: '****',
+      source: 'stored'
+    }));
+
+    const uniqueLocalDrivers: any[] = [];
+    const seenIds = new Set<string>();
+
+    if (Array.isArray(localDrivers)) {
+      localDrivers.forEach(driver => {
+        if (!seenIds.has(driver.id)) {
+          seenIds.add(driver.id);
+          uniqueLocalDrivers.push(driver);
+        }
+      });
+    }
+
+    storedWithDetails.forEach(storedDriver => {
+      if (!seenIds.has(storedDriver.id)) {
+        seenIds.add(storedDriver.id);
+        uniqueLocalDrivers.push(storedDriver);
+      } else {
+        if (__DEV__) console.log(`⚠️ Skipping duplicate pre-stored ID: ${storedDriver.id}`);
+      }
+    });
+
+    if (__DEV__) console.log(`📊 Unique local drivers: ${uniqueLocalDrivers.length}`);
+    return uniqueLocalDrivers;
+  };
+
   // Check if we're in assignment mode
   const isAssignmentMode = route?.params?.mode === 'assign';
   const packageId = route?.params?.packageId;
@@ -34,43 +73,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
         const { getDriversLocally } = await import('../utils/localDatabase');
         const localDrivers = await getDriversLocally();
         
-        // 2. Load active pre-stored drivers
-        const activeStored = getActiveDrivers();
-        const storedWithDetails = activeStored.map(d => ({
-          ...d,
-          name: `Livreur ${d.id.split('-')[1]}`,
-          vehicle_type: 'Non spécifié',
-          phone: 'Non spécifié',
-          pin_code: '****', // Never expose actual PINs
-          source: 'stored'
-        }));
-
-        // 3. Remove duplicates - prioritize local drivers over pre-stored generic ones
-        const uniqueLocalDrivers: any[] = [];
-        const seenIds = new Set<string>();
-        
-        console.log(`📱 Loaded ${localDrivers.length} drivers from local storage`);
-        console.log(`📋 Loaded ${storedWithDetails.length} pre-stored drivers`);
-        
-        // First add local drivers (admin-created with real data)
-        localDrivers.forEach(driver => {
-          if (!seenIds.has(driver.id)) {
-            seenIds.add(driver.id);
-            uniqueLocalDrivers.push(driver);
-          }
-        });
-        
-        // Then add pre-stored drivers ONLY if they don't conflict with local drivers
-        storedWithDetails.forEach(storedDriver => {
-          if (!seenIds.has(storedDriver.id)) {
-            seenIds.add(storedDriver.id);
-            uniqueLocalDrivers.push(storedDriver);
-          } else {
-            console.log(`⚠️ Skipping duplicate pre-stored ID: ${storedDriver.id} (already exists as local driver)`);
-          }
-        });
-        
-        console.log(`📊 Unique local drivers: ${uniqueLocalDrivers.length}`);
+        const uniqueLocalDrivers = buildDriverList(localDrivers);
         
         // 4. Try Supabase for real-time updates
         try {
@@ -127,45 +130,18 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       const { getDriversLocally } = await import('../utils/localDatabase');
       const localDrivers = await getDriversLocally();
       
-      // Get active pre-stored drivers
-      const activeStored = getActiveDrivers();
-      const storedWithDetails = activeStored.map(d => ({
-        ...d,
-        name: `Livreur ${d.id.split('-')[1]}`,
-        vehicle_type: 'Non spécifié',
-        phone: 'Non spécifié',
-        pin_code: '****',
-        source: 'stored'
-      }));
-      
-      // Merge local drivers, removing duplicates
-      const uniqueLocalDrivers: any[] = [];
-      const seenIds = new Set<string>();
-      
-      localDrivers.forEach(driver => {
-        if (!seenIds.has(driver.id)) {
-          seenIds.add(driver.id);
-          uniqueLocalDrivers.push(driver);
-        }
-      });
-      
-      storedWithDetails.forEach(storedDriver => {
-        if (!seenIds.has(storedDriver.id)) {
-          seenIds.add(storedDriver.id);
-          uniqueLocalDrivers.push(storedDriver);
-        }
-      });
-      
+      const uniqueLocalDrivers = buildDriverList(localDrivers);
+
       // Merge with current Firebase drivers (if any)
       setDrivers(prevDrivers => {
         const firebaseDrivers = prevDrivers.filter(d => d.source === 'firebase');
         const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
-        
+
         // Add unique local drivers that aren't in Firebase
         const newLocalDrivers = uniqueLocalDrivers.filter(ld => !firebaseIds.has(ld.id));
-        
+
         const merged = [...firebaseDrivers, ...newLocalDrivers];
-        console.log('🔄 Manual refresh: merged', merged.length, 'drivers (', firebaseDrivers.length, 'Firebase +', newLocalDrivers.length, 'local)');
+        if (__DEV__) console.log('🔄 Manual refresh: merged', merged.length, 'drivers (', firebaseDrivers.length, 'Firebase +', newLocalDrivers.length, 'local)');
         return merged;
       });
     } catch (error) {
@@ -195,36 +171,8 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
           // 2. Read the now-updated local storage
           const { getDriversLocally } = await import('../utils/localDatabase');
           const localDrivers = await getDriversLocally();
-
-          // 3. Rebuild merged list (local DB-backed drivers + pre-stored stubs)
-          const activeStored = getActiveDrivers();
-          const storedWithDetails = activeStored.map(d => ({
-            ...d,
-            name: `Livreur ${d.id.split('-')[1]}`,
-            vehicle_type: 'Non spécifié',
-            phone: 'Non spécifié',
-            pin_code: '****',
-            source: 'stored'
-          }));
-
-          const uniqueDrivers: any[] = [];
-          const seenIds = new Set<string>();
-
-          localDrivers.forEach(driver => {
-            if (!seenIds.has(driver.id)) {
-              seenIds.add(driver.id);
-              uniqueDrivers.push(driver);
-            }
-          });
-
-          storedWithDetails.forEach(storedDriver => {
-            if (!seenIds.has(storedDriver.id)) {
-              seenIds.add(storedDriver.id);
-              uniqueDrivers.push(storedDriver);
-            }
-          });
-
-          console.log('🔄 Auto-refresh on focus: loaded', uniqueDrivers.length, 'drivers');
+          const uniqueDrivers = buildDriverList(localDrivers);
+          if (__DEV__) console.log('🔄 Auto-refresh on focus: loaded', uniqueDrivers.length, 'drivers');
           setDrivers(uniqueDrivers);
         } catch (error) {
           console.error('Error refreshing on focus:', error);
@@ -352,36 +300,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       try {
         const { getDriversLocally } = await import('../utils/localDatabase');
         const refreshedDrivers = await getDriversLocally();
-        
-        // Also get pre-stored drivers
-        const activeStored = getActiveDrivers();
-        const storedWithDetails = activeStored.map(d => ({
-          ...d,
-          name: `Livreur ${d.id.split('-')[1]}`,
-          vehicle_type: 'Non spécifié',
-          phone: 'Non spécifié',
-          pin_code: '****',
-          source: 'stored'
-        }));
-        
-        // Merge and remove duplicates
-        const finalDrivers: any[] = [];
-        const seenIds = new Set<string>();
-        
-        refreshedDrivers.forEach((d: any) => {
-          if (!seenIds.has(d.id) && d.id !== driver.id) {
-            seenIds.add(d.id);
-            finalDrivers.push(d);
-          }
-        });
-        
-        storedWithDetails.forEach((d: any) => {
-          if (!seenIds.has(d.id)) {
-            seenIds.add(d.id);
-            finalDrivers.push(d);
-          }
-        });
-        
+        const finalDrivers = buildDriverList(refreshedDrivers).filter((d: any) => d.id !== driver.id);
         setDrivers(finalDrivers);
         console.log('✅ UI updated, removed driver:', driver.id);
       } catch (refreshError) {

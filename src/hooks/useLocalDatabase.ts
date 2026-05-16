@@ -209,24 +209,23 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
         updates.delivered_at = new Date().toISOString();
       }
 
-      // Update locally first (always works)
-      const localPkgs = await getPackagesLocally(undefined, true);
-      const pkgIndex = localPkgs.findIndex(p => p.id === packageId);
-      
-      if (pkgIndex >= 0) {
-        const updatedPkg = { 
-          ...localPkgs[pkgIndex], 
+      // Update locally first (always works).
+      // Use in-memory `packages` state to avoid deserializing ALL packages
+      // from AsyncStorage on every status update (avoids heavy IO + races).
+      const existingPkg = packages.find(p => p.id === packageId);
+
+      if (existingPkg) {
+        const updatedPkg: Package = {
+          ...existingPkg,
           ...updates,
           _last_modified: new Date().toISOString(),
-        };
-        
-        // Save to local storage immediately
+        } as Package;
+
+        // Persist the single-package change using the targeted upsert helper
         await upsertPackageLocally(updatedPkg);
-        
+
         // Update local state for instant UI update
-        setPackages(prev => prev.map(pkg => 
-          pkg.id === packageId ? updatedPkg : pkg
-        ));
+        setPackages(prev => prev.map(pkg => pkg.id === packageId ? updatedPkg : pkg));
       }
 
       // Skip Firebase sync for pre-stored driver IDs
