@@ -448,6 +448,20 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
 
 // SYNC OPERATIONS
 
+// Debounce handle for auto-flush — batches rapid back-to-back enqueues into one flush
+let _autoFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+const _scheduleAutoFlush = () => {
+  if (_autoFlushTimer) clearTimeout(_autoFlushTimer);
+  _autoFlushTimer = setTimeout(() => {
+    _autoFlushTimer = null;
+    // Fire-and-forget: flush the queue to Supabase immediately after any write
+    processSyncQueue().catch((e) =>
+      console.warn('[autoFlush] processSyncQueue error:', e)
+    );
+  }, 300); // 300 ms debounce — batches rapid bulk writes
+};
+
 /**
  * Add operation to sync queue
  */
@@ -476,6 +490,9 @@ export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'time
     } else {
       console.warn('No user logged in, sync operations will be processed from local queue only');
     }
+
+    // Auto-flush: immediately push this change to Supabase (debounced to batch bulk writes)
+    _scheduleAutoFlush();
   } catch (error) {
     console.error('Error adding to sync queue:', error);
     // Don't throw error - sync queue should be resilient
