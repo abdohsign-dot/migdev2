@@ -40,6 +40,7 @@ export interface Driver {
   name: string;
   phone: string;
   vehicle_type: string;
+  zone?: string;
   pin_code: string;
   is_active: boolean;
   created_at: string; // ISO 8601 UTC timestamp

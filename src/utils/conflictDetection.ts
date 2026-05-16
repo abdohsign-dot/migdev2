@@ -77,8 +77,8 @@ export const detectPackageConflict = (
 
   // Check version mismatch
   if (local.version !== remote.version) {
-    const localTime = new Date(local.updated_at).getTime();
-    const remoteTime = new Date(remote.updated_at).getTime();
+    const localTime = new Date(local.updated_at || (local as any)._last_modified || 0).getTime();
+    const remoteTime = new Date(remote.updated_at || (remote as any)._last_modified || 0).getTime();
     const isLocalNewer = localTime > remoteTime;
 
     return {
@@ -100,8 +100,8 @@ export const detectPackageConflict = (
   }
 
   // Same version - check timestamps
-  const localTime = new Date(local.updated_at).getTime();
-  const remoteTime = new Date(remote.updated_at).getTime();
+  const localTime = new Date(local.updated_at || (local as any)._last_modified || 0).getTime();
+  const remoteTime = new Date(remote.updated_at || (remote as any)._last_modified || 0).getTime();
 
   if (localTime !== remoteTime) {
     const isLocalNewer = localTime > remoteTime;
@@ -194,8 +194,8 @@ export const detectDriverConflict = (
 
   // Check version mismatch
   if (local.version !== remote.version) {
-    const localTime = new Date(local.updated_at).getTime();
-    const remoteTime = new Date(remote.updated_at).getTime();
+    const localTime = new Date(local.updated_at || (local as any)._last_modified || 0).getTime();
+    const remoteTime = new Date(remote.updated_at || (remote as any)._last_modified || 0).getTime();
     const isLocalNewer = localTime > remoteTime;
 
     return {
@@ -217,8 +217,8 @@ export const detectDriverConflict = (
   }
 
   // Same version - check timestamps
-  const localTime = new Date(local.updated_at).getTime();
-  const remoteTime = new Date(remote.updated_at).getTime();
+  const localTime = new Date(local.updated_at || (local as any)._last_modified || 0).getTime();
+  const remoteTime = new Date(remote.updated_at || (remote as any)._last_modified || 0).getTime();
 
   if (localTime !== remoteTime) {
     const isLocalNewer = localTime > remoteTime;

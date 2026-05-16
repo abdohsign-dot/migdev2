@@ -182,31 +182,50 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
     return;
   };
 
-  // Refresh when screen comes into focus (after creating a new driver)
+  // Refresh when screen comes into focus (after creating/modifying a driver)
   useFocusEffect(
     useCallback(() => {
-      console.log('👁️ DriverListScreen focused - refreshing drivers');
-      // Reload drivers from local storage and merge with existing state
+      console.log('👁️ DriverListScreen focused - refreshing drivers from Supabase');
       const refreshOnFocus = async () => {
         try {
+          // 1. Pull latest drivers from Supabase into local storage
+          const { syncDriversFromSupabase } = await import('../utils/supabaseSync');
+          await syncDriversFromSupabase();
+
+          // 2. Read the now-updated local storage
           const { getDriversLocally } = await import('../utils/localDatabase');
           const localDrivers = await getDriversLocally();
-          
-          // Merge with current Firebase drivers to avoid losing them
-          setDrivers(prevDrivers => {
-            const firebaseDrivers = prevDrivers.filter(d => d.source === 'firebase');
-            const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
-            
-            // Add local drivers that aren't already in the list
-            const newLocalDrivers = localDrivers.filter(ld => !firebaseIds.has(ld.id));
-            
-            const merged = [...firebaseDrivers, ...newLocalDrivers];
-            console.log('🔄 Auto-refresh on focus: merged', merged.length, 'drivers');
-            return merged;
+
+          // 3. Rebuild merged list (local DB-backed drivers + pre-stored stubs)
+          const activeStored = getActiveDrivers();
+          const storedWithDetails = activeStored.map(d => ({
+            ...d,
+            name: `Livreur ${d.id.split('-')[1]}`,
+            vehicle_type: 'Non spécifié',
+            phone: 'Non spécifié',
+            pin_code: '****',
+            source: 'stored'
+          }));
+
+          const uniqueDrivers: any[] = [];
+          const seenIds = new Set<string>();
+
+          localDrivers.forEach(driver => {
+            if (!seenIds.has(driver.id)) {
+              seenIds.add(driver.id);
+              uniqueDrivers.push(driver);
+            }
           });
-          
-          // Try to sync any local-only drivers to Firestore
-          await syncLocalDriversToFirestore();
+
+          storedWithDetails.forEach(storedDriver => {
+            if (!seenIds.has(storedDriver.id)) {
+              seenIds.add(storedDriver.id);
+              uniqueDrivers.push(storedDriver);
+            }
+          });
+
+          console.log('🔄 Auto-refresh on focus: loaded', uniqueDrivers.length, 'drivers');
+          setDrivers(uniqueDrivers);
         } catch (error) {
           console.error('Error refreshing on focus:', error);
         }
@@ -452,6 +471,12 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
         <Text style={styles.infoLabel}>Code PIN:</Text>
         <Text style={[styles.infoValue, { fontWeight: '800', color: '#3B82F6' }]}>{item.pin_code || 'N/A'}</Text>
       </View>
+      {item.zone && (
+        <View style={styles.cardBody}>
+          <Text style={styles.infoLabel}>Zone:</Text>
+          <Text style={[styles.infoValue, { color: '#10B981' }]}>{item.zone}</Text>
+        </View>
+      )}
       <View style={styles.cardBody}>
         <Text style={styles.infoLabel}>Téléphone:</Text>
         <Text style={styles.infoValue}>{item.phone}</Text>

@@ -12,26 +12,10 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [vehicle, setVehicle] = useState('Moto');
+  const [zone, setZone] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{name?: string; phone?: string; pin?: string}>({});
-  const [firebaseAvailable, setFirebaseAvailable] = useState(true);
-  const [availableIds, setAvailableIds] = useState<string[]>([]);
-  const [selectedId, setSelectedId] = useState<string>('');
-  const { userRole } = useAuthStore();
-  const isAdmin = userRole === 'admin';
 
-  // Get available driver IDs from stored credentials
-  React.useEffect(() => {
-    const activeDrivers = getActiveDrivers();
-    const usedIds = activeDrivers.map(d => d.id);
-    const available = DRIVER_CREDENTIALS
-      .filter(d => !usedIds.includes(d.id))
-      .map(d => d.id);
-    setAvailableIds(available);
-    if (available.length > 0) {
-      setSelectedId(available[0]);
-    }
-  }, []);
 
   const validateForm = (): boolean => {
     const newErrors: {name?: string; phone?: string; pin?: string} = {};
@@ -97,120 +81,47 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
       };
       
       let driverId: string = generateShortDriverId();
-      let useFirebase = false;
       
-      // IMPORTANT: Admin-created drivers should NEVER use pre-stored IDs
-      // Pre-stored IDs (DRV-001 to DRV-020) are ONLY for pre-configured drivers
-      
-      let firebaseError: any = null;
-      
-      // STRATEGY: Only sync to Firestore if admin is logged in
-      // Otherwise, create locally only
-      
-      if (isAdmin) {
-        // Admin is logged in - try to save to Firestore with our pre-generated ID
-        try {
-          // Use React Native Firebase v22 modular API
-          const { getApp } = require('@react-native-firebase/app');
-          const { getFirestore, doc, setDoc } = require('@react-native-firebase/firestore');
-          
-          const app = getApp();
-          const db = getFirestore(app);
-          
-          // Create driver in Firestore using our generated ID (consistent format)
-          const driverRef = doc(db, 'drivers', driverId);
-          await setDoc(driverRef, {
-            id: driverId, // Store ID in document too for reference
-            name: trimmedName,
-            phone: trimmedPhone,
-            vehicle_type: vehicle,
-            pin_code: trimmedPin,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            source: 'firebase',
-            created_by: 'admin'
-          });
-          
-          useFirebase = true;
-          if (isMounted) {
-            setFirebaseAvailable(true);
-          }
-          
-          // Store PIN locally for login (Firestore driver)
-          storeDriverPin(driverId, trimmedPin);
-          console.log('✅ Admin created driver in Firestore with ID:', driverId);
-          
-        } catch (firebaseErr) {
-          firebaseError = firebaseErr;
-          console.log('❌ Firestore creation failed:', firebaseErr);
-          console.log('Error code:', (firebaseErr as any)?.code);
-          console.log('Error message:', (firebaseErr as any)?.message);
-          if (isMounted) {
-            setFirebaseAvailable(false);
-          }
-          // Continue to local creation - same ID format will be used
-        }
-      }
-      
-      // Store locally with same ID format (whether Firestore succeeded or not)
-      if (!useFirebase) {
-        // Add to local credentials (for login)
-        addNewDriverCredential(trimmedPin);
-        console.log(`📱 Created driver locally with ID:`, driverId);
-      }
-
-      // Make sure driverId is set
-      if (!driverId) {
-        throw new Error('Could not generate driver ID');
-      }
-
-      // Store driver info locally (in AsyncStorage or local DB)
+      // Store locally and queue sync
       try {
-        // Import dynamically to avoid circular dependencies
-        const { storeDriverLocally } = await import('../utils/localDatabase');
-        await storeDriverLocally({
+        const { storeDriverLocally, addToSyncQueue, processSyncQueue, syncDriversFromSupabase } = await import('../utils/supabaseSync');
+        const driverObj = {
           id: driverId,
-          name,
+          custom_id: driverId, // Use generated ID as custom_id
+          name: trimmedName,
           phone: trimmedPhone,
           vehicle_type: vehicle,
+          zone: zone.trim() || undefined,
           pin_code: trimmedPin,
           is_active: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           version: 1,
-          source: useFirebase ? 'firebase' : 'local'
+          source: 'local' as const
+        };
+        
+        await storeDriverLocally(driverObj);
+        
+        // Queue for Supabase sync
+        await addToSyncQueue({
+          type: 'create',
+          collection: 'drivers',
+          data: driverObj
         });
-        console.log('✅ Driver stored locally with ID:', driverId);
+        
+        console.log('✅ Driver created and queued for sync:', driverId);
+
+        // Immediately flush queue to Supabase (fire-and-forget — don't await so UI isn't blocked)
+        processSyncQueue()
+          .then(() => syncDriversFromSupabase())
+          .catch((e: any) => console.warn('⚠️ Background sync after create failed:', e));
       } catch (localError) {
         console.warn('⚠️ Could not store driver locally:', localError);
-        // Continue anyway - at least we have the ID
       }
-
-      let message = `Le livreur a été créé avec succès.\n\nID de Connexion:\n${driverId}\n\nCode PIN:\n${trimmedPin}\n\n`;
-      
-      if (useFirebase) {
-        message += '✅ Synchronisé avec Firestore (Admin multi-appareil)\n';
-        message += '� Disponible sur tous les appareils connectés\n';
-      } else if (isAdmin && firebaseError) {
-        message += '📱 Stocké localement seulement\n';
-        message += `⚠️ Firestore erreur: ${(firebaseError as any)?.code || 'Erreur inconnue'}\n`;
-        if ((firebaseError as any)?.message) {
-          message += `Détail: ${(firebaseError as any).message.substring(0, 50)}...\n`;
-        }
-        message += '🔧 Se synchronisera quand Firestore sera disponible\n';
-      } else if (!isAdmin) {
-        message += '📱 Stocké localement seulement\n';
-        message += '👤 Mode Livreur - Pas de synchronisation Firestore\n';
-        message += 'ℹ️ Seul l\'admin peut synchroniser entre appareils\n';
-      }
-      
-      message += `\nFormat ID: DRV-XXXXXX (6 caractères alphanumériques)\n`;
-      message += '⚠️ Note: Les IDs DRV-001 à DRV-020 sont réservés pour configuration préalable\n';
-      message += '\nVeuillez transmettre ces informations au livreur.';
 
       Alert.alert(
         "Livreur Créé",
-        message,
+        `Le livreur a été créé avec succès.\n\nID: ${driverId}\nPIN: ${trimmedPin}`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       );
     } catch (error) {
@@ -279,6 +190,17 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
               ))}
             </View>
           </View>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Zone (Quartier/Secteur)</Text>
+            <TextInput 
+              style={styles.input} 
+              placeholder="Ex: Maarif, Centre Ville, etc." 
+              value={zone} 
+              onChangeText={setZone} 
+            />
+            <Text style={styles.helperText}>Aide à l'assignation des colis par secteur.</Text>
+          </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Code PIN (Sécurité) *</Text>
@@ -298,29 +220,7 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
             <Text style={styles.helperText}>Ce code sera exigé lors de la connexion du livreur.</Text>
           </View>
 
-          {!firebaseAvailable && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>ID Disponible *</Text>
-              <Text style={styles.warningText}>⚠️ Firebase indisponible - Utilisation des IDs pré-configurés</Text>
-              {availableIds.length > 0 ? (
-                <View style={styles.idContainer}>
-                  {availableIds.map(id => (
-                    <TouchableOpacity
-                      key={id}
-                      style={[styles.idOption, selectedId === id && styles.idOptionSelected]}
-                      onPress={() => setSelectedId(id)}
-                    >
-                      <Text style={[styles.idText, selectedId === id && styles.idTextSelected]}>
-                        {id}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.errorText}>Aucun ID disponible</Text>
-              )}
-            </View>
-          )}
+
 
           <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleAddDriver} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Créer le Livreur</Text>}

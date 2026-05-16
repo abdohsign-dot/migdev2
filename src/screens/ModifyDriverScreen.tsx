@@ -17,12 +17,11 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
   const [name, setName] = useState(driver.name || '');
   const [phone, setPhone] = useState(driver.phone || '');
   const [vehicle, setVehicle] = useState(driver.vehicle_type || 'Moto');
+  const [zone, setZone] = useState(driver.zone || '');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{name?: string; phone?: string}>({});
-  const [firebaseAvailable, setFirebaseAvailable] = useState(true);
+  const [pin, setPin] = useState(driver.pin_code || '');
+  const [errors, setErrors] = useState<{name?: string; phone?: string; pin?: string}>({});
   const [isPreStored, setIsPreStored] = useState(false);
-  const { userRole } = useAuthStore();
-  const isAdmin = userRole === 'admin';
 
   useEffect(() => {
     // Check if this is a pre-stored driver
@@ -40,7 +39,7 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
   }, [driver]);
 
   const validateForm = (): boolean => {
-    const newErrors: {name?: string; phone?: string} = {};
+    const newErrors: {name?: string; phone?: string; pin?: string} = {};
     
     if (!name.trim()) {
       newErrors.name = "Le nom est requis";
@@ -50,6 +49,12 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
       newErrors.phone = "Le téléphone est requis";
     } else if (!/^0[1-9]\d{8}$/.test(phone)) {
       newErrors.phone = "Format: 06... ou 07...";
+    }
+
+    if (!pin.trim()) {
+      newErrors.pin = "Le PIN est requis";
+    } else if (pin.trim().length !== 4) {
+      newErrors.pin = "Le PIN doit contenir 4 chiffres";
     }
     
     setErrors(newErrors);
@@ -76,84 +81,51 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
         name,
         phone,
         vehicle_type: vehicle,
+        zone: zone.trim() || undefined,
+        pin_code: pin.trim(),
         _lastModified: new Date().toISOString()
       };
 
-      // 1. Only try to update in Firebase if admin is logged in
-      let firebaseUpdated = false;
-      let firebaseError: any = null;
-      
-      if (isAdmin) {
-        try {
-          const { getApp } = require('@react-native-firebase/app');
-          const { getFirestore, doc, updateDoc } = require('@react-native-firebase/firestore');
-          const app = getApp();
-          const db = getFirestore(app);
-          await updateDoc(doc(db, 'drivers', driver.id), {
-            name,
-            phone,
-            vehicle_type: vehicle,
-            updated_at: new Date().toISOString(),
-            updated_by: 'admin'
-          });
-          firebaseUpdated = true;
-          if (isMounted) {
-            setFirebaseAvailable(true);
-          }
-          console.log('✅ Admin updated driver in Firebase');
-        } catch (firebaseErr) {
-          firebaseError = firebaseErr;
-          console.log('Firebase update failed:', firebaseErr);
-          if (isMounted) {
-            setFirebaseAvailable(false);
-          }
-        }
-      }
-
-      // 2. Always update locally
+      // 1. Always update locally
       try {
-        const { storeDriverLocally } = await import('../utils/localDatabase');
+        const { storeDriverLocally, addToSyncQueue, processSyncQueue, syncDriversFromSupabase } = await import('../utils/supabaseSync');
         await storeDriverLocally(updatedDriver);
-        console.log('✅ Driver updated locally');
+        
+        // 2. Queue for Supabase sync
+        await addToSyncQueue({
+          type: 'update',
+          collection: 'drivers',
+          data: {
+            id: driver.id,
+            updates: {
+              name,
+              phone,
+              vehicle_type: vehicle,
+              zone: zone.trim() || undefined,
+              pin_code: pin.trim(),
+            }
+          }
+        });
+        
+        console.log('✅ Driver updated locally and queued for sync');
+
+        // 3. Immediately flush queue to Supabase (fire-and-forget)
+        processSyncQueue()
+          .then(() => syncDriversFromSupabase())
+          .catch((e: any) => console.warn('⚠️ Background sync after update failed:', e));
       } catch (localError) {
         console.warn('⚠️ Could not update driver locally:', localError);
       }
-
+      
       // 3. If it's a pre-stored driver, activate it with real info
       if (isPreStored) {
         activateDriverId(driver.id);
-        console.log('✅ Pre-stored driver activated with real info');
-      }
-
-      let message = `Livreur "${name}" mis à jour avec succès.\n\n`;
-      
-      if (firebaseUpdated) {
-        message += '✅ Synchronisé avec Firestore (Admin multi-appareil)\n';
-      } else if (isAdmin && firebaseError) {
-        message += '📱 Mis à jour localement seulement\n';
-        message += `⚠️ Firestore erreur: ${firebaseError?.code || 'Erreur inconnue'}\n`;
-        message += '🔧 Admin connecté mais Firestore indisponible\n';
-      } else if (!isAdmin) {
-        message += '📱 Mis à jour localement seulement\n';
-        message += '👤 Mode Livreur - Pas de synchronisation Firestore\n';
-        message += 'ℹ️ Seul l\'admin peut synchroniser entre appareils\n';
-      } else {
-        message += '📱 Mis à jour localement seulement\n';
-      }
-      
-      if (isPreStored) {
-        message += '🔓 ID pré-configuré activé avec informations réelles\n';
       }
 
       Alert.alert(
         "Modifications Enregistrées",
-        message,
-        [
-          { 
-            text: "OK", 
-            onPress: () => navigation.goBack()
-          }
-        ]
+        "Le livreur a été mis à jour avec succès.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
       );
     } catch (error) {
       console.error('❌ Error updating driver:', error);
@@ -171,13 +143,6 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
     }
   };
 
-  const handleResetPIN = () => {
-    Alert.alert(
-      "Réinitialiser le PIN",
-      "Cette fonctionnalité n'est pas encore disponible. Pour réinitialiser le PIN, vous devez créer un nouveau livreur.",
-      [{ text: "OK" }]
-    );
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -192,7 +157,7 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           
-          {isPreStored && (
+          {isPreStored ? (
             <View style={styles.infoBanner}>
               <Text style={styles.infoBannerText}>
                 📋 ID Pré-configuré: {driver.id}
@@ -200,6 +165,14 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
               <Text style={styles.infoBannerSubtext}>
                 Ce livreur utilise un ID réservé. Ajoutez ses informations réelles.
               </Text>
+            </View>
+          ) : (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>ID de Connexion</Text>
+              <View style={styles.idDisplay}>
+                <Text style={styles.idText}>{driver.id}</Text>
+                <Text style={styles.idNote}>ID utilisé par le livreur pour se connecter</Text>
+              </View>
             </View>
           )}
 
@@ -240,26 +213,31 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
               ))}
             </View>
           </View>
-
+          
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>ID de Connexion</Text>
-            <View style={styles.idDisplay}>
-              <Text style={styles.idText}>{driver.id}</Text>
-              <Text style={styles.idNote}>
-                {isPreStored ? 'ID pré-configuré (ne peut pas être modifié)' : 'ID généré par le système'}
-              </Text>
-            </View>
+            <Text style={styles.label}>Zone (Quartier/Secteur)</Text>
+            <TextInput 
+              style={styles.input} 
+              placeholder="Ex: Maarif, Centre Ville, etc." 
+              value={zone} 
+              onChangeText={setZone} 
+            />
+            <Text style={styles.helperText}>Aide à l'assignation des colis par secteur.</Text>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Code PIN</Text>
-            <View style={styles.pinDisplay}>
-              <Text style={styles.pinText}>{driver.pin_code || '****'}</Text>
-              <TouchableOpacity style={styles.resetPinButton} onPress={handleResetPIN}>
-                <Text style={styles.resetPinText}>Réinitialiser</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.helperText}>Le PIN ne peut pas être modifié ici pour des raisons de sécurité.</Text>
+            <Text style={styles.label}>Code PIN (4 chiffres) *</Text>
+            <TextInput 
+              style={[styles.input, errors.pin && styles.inputError]} 
+              placeholder="1234" 
+              keyboardType="numeric"
+              maxLength={4}
+              secureTextEntry
+              value={pin} 
+              onChangeText={setPin} 
+            />
+            {errors.pin && <Text style={styles.errorText}>{errors.pin}</Text>}
+            <Text style={styles.helperText}>Ce code permet au livreur de se connecter.</Text>
           </View>
 
           <TouchableOpacity 

@@ -602,16 +602,27 @@ export const createDriver = async (driverData: Omit<Driver, 'id' | 'updated_at' 
       return result;
     };
     
-    const custom_id = driverData.custom_id || generateCustomId();
+    // Preserve the caller's local id (e.g. DRV-XXXXXX) as custom_id so that
+    // the local record and the Supabase UUID row stay linked via custom_id.
+    const raw = driverData as any;
+    const custom_id = raw.custom_id || raw.id || generateCustomId();
+    const version = typeof raw.version === 'number' && !isNaN(raw.version) ? raw.version : 1;
+
+    // Strip local JS fields; Supabase auto-generates UUID 'id'
+    const { id: _stripId, updated_at: _stripUa, version: _stripV, custom_id: _stripCid, ...safeData } = raw;
     
+    // Use upsert by custom_id to prevent duplicate rows on retry
     const { data, error } = await db
       .from('drivers')
-      .insert({
-        ...driverData,
-        custom_id,
-        _last_modified: new Date().toISOString(),
-        _version: '1',
-      })
+      .upsert(
+        {
+          ...safeData,
+          custom_id,
+          _last_modified: new Date().toISOString(),
+          _version: String(version),
+        },
+        { onConflict: 'custom_id' }
+      )
       .select()
       .single();
 
@@ -625,7 +636,7 @@ export const createDriver = async (driverData: Omit<Driver, 'id' | 'updated_at' 
 
 /**
  * Create new driver with service role (bypasses RLS)
- * Used for migration operations
+ * Used for migration operations and offline sync queue processing
  */
 export const createDriverServiceRole = async (driverData: Omit<Driver, 'id' | 'updated_at' | 'version'>): Promise<Driver> => {
   try {
@@ -641,16 +652,28 @@ export const createDriverServiceRole = async (driverData: Omit<Driver, 'id' | 'u
       return result;
     };
     
-    const custom_id = driverData.custom_id || generateCustomId();
+    // Preserve the caller's local id (e.g. DRV-XXXXXX) as custom_id so that
+    // the local record and the Supabase UUID row stay linked via custom_id.
+    const raw = driverData as any;
+    const custom_id = raw.custom_id || raw.id || generateCustomId();
+    const version = typeof raw.version === 'number' && !isNaN(raw.version) ? raw.version : 1;
+
+    // Strip local JS fields; Supabase auto-generates UUID 'id'
+    const { id: _stripId, updated_at: _stripUa, version: _stripV, custom_id: _stripCid, ...safeData } = raw;
     
+    // Use upsert by custom_id so that retried sync-queue 'create' ops
+    // don't insert duplicate rows if the driver was already written.
     const { data, error } = await db
       .from('drivers')
-      .insert({
-        ...driverData,
-        custom_id,
-        _last_modified: new Date().toISOString(),
-        _version: '1',
-      })
+      .upsert(
+        {
+          ...safeData,
+          custom_id,
+          _last_modified: new Date().toISOString(),
+          _version: String(version),
+        },
+        { onConflict: 'custom_id' }
+      )
       .select()
       .single();
 
@@ -680,16 +703,25 @@ export const upsertDriverServiceRole = async (driverData: Omit<Driver, 'id' | 'u
       return result;
     };
     
-    const custom_id = driverData.custom_id || generateCustomId();
+    // Preserve caller's local id as custom_id for ID linkage
+    const raw = driverData as any;
+    const custom_id = raw.custom_id || raw.id || generateCustomId();
+    const version = typeof raw.version === 'number' && !isNaN(raw.version) ? raw.version : 1;
+
+    // Strip local JS fields; Supabase auto-generates UUID 'id'
+    const { id: _stripId, updated_at: _stripUa, version: _stripV, custom_id: _stripCid, ...safeData } = raw;
     
     const { data, error } = await db
       .from('drivers')
-      .upsert({
-        ...driverData,
-        custom_id,
-        _last_modified: new Date().toISOString(),
-        _version: '1',
-      })
+      .upsert(
+        {
+          ...safeData,
+          custom_id,
+          _last_modified: new Date().toISOString(),
+          _version: String(version),
+        },
+        { onConflict: 'custom_id' }
+      )
       .select()
       .single();
 
@@ -707,14 +739,19 @@ export const upsertDriverServiceRole = async (driverData: Omit<Driver, 'id' | 'u
 export const updateDriver = async (id: string, updates: Partial<Driver>): Promise<Driver> => {
   try {
     const db = getDb();
-    const { updated_at: _ua, version: _v, ...safeUpdates } = updates as any;
+    const { updated_at: _ua, version: _v, id: _stripId, custom_id: _stripCustomId, ...safeUpdates } = updates as any;
+    
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const isUuid = uuidRegex.test(id);
+    const column = isUuid ? 'id' : 'custom_id';
+    
     const { data, error } = await db
       .from('drivers')
       .update({
         ...safeUpdates,
         _last_modified: new Date().toISOString(),
       })
-      .eq('id', id)
+      .eq(column, id)
       .select()
       .single();
 
@@ -727,19 +764,80 @@ export const updateDriver = async (id: string, updates: Partial<Driver>): Promis
 };
 
 /**
+ * Update driver with service role (bypasses RLS)
+ */
+export const updateDriverServiceRole = async (id: string, updates: Partial<Driver>): Promise<Driver> => {
+  try {
+    const db = getDbServiceRole();
+    const { updated_at: _ua, version: _v, id: _stripId, custom_id: _stripCustomId, ...safeUpdates } = updates as any;
+    
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const isUuid = uuidRegex.test(id);
+    const column = isUuid ? 'id' : 'custom_id';
+    
+    // IMPORTANT: don't use .single() directly as it throws PGRST116 if no rows match.
+    // We check if data exists first.
+    const { data, error } = await db
+      .from('drivers')
+      .update({
+        ...safeUpdates,
+        _last_modified: new Date().toISOString(),
+      })
+      .eq(column, id)
+      .select();
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      console.log(`ℹ️ updateDriverServiceRole: No driver matched id=${id}`);
+      return updates as Driver; // Or handle as needed
+    }
+    return data[0] as Driver;
+  } catch (error) {
+    console.error('Error updating driver with service role:', error);
+    throw error;
+  }
+};
+
+/**
  * Delete driver
  */
 export const deleteDriver = async (id: string): Promise<void> => {
   try {
     const db = getDb();
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const isUuid = uuidRegex.test(id);
+    const column = isUuid ? 'id' : 'custom_id';
+    
     const { error } = await db
       .from('drivers')
       .delete()
-      .eq('id', id);
+      .eq(column, id);
 
     if (error) throw error;
   } catch (error) {
     console.error('Error deleting driver:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete driver with service role (bypasses RLS)
+ */
+export const deleteDriverServiceRole = async (id: string): Promise<void> => {
+  try {
+    const db = getDbServiceRole();
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const isUuid = uuidRegex.test(id);
+    const column = isUuid ? 'id' : 'custom_id';
+    
+    const { error } = await db
+      .from('drivers')
+      .delete()
+      .eq(column, id);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting driver with service role:', error);
     throw error;
   }
 };

@@ -24,7 +24,9 @@ import {
   createDriver,
   createDriverServiceRole,
   updateDriver,
+  updateDriverServiceRole,
   deleteDriver,
+  deleteDriverServiceRole,
   getSyncOperations,
   createSyncOperation,
   markSyncOperationAsSynced,
@@ -388,7 +390,14 @@ export const getDriversLocally = async (): Promise<Driver[]> => {
 export const storeDriverLocally = async (driver: Driver): Promise<void> => {
   try {
     const drivers = await getDriversLocally();
-    const existingIndex = drivers.findIndex(d => d.id === driver.id);
+    // Match by ID or custom_id to prevent duplicates when Supabase generates a new UUID
+    // but we already have the local driver stored with custom_id (e.g. DRV-XXXXXX) as its local ID.
+    const existingIndex = drivers.findIndex(d => 
+      d.id === driver.id || 
+      (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
+      (d.id && driver.custom_id && d.id === driver.custom_id) ||
+      (d.custom_id && driver.id && d.custom_id === driver.id)
+    );
 
     // Normalize old timestamp fields to new standard
     const normalized: any = { ...driver };
@@ -406,9 +415,19 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
     delete normalized._version;
 
     if (existingIndex >= 0) {
+      // If the incoming record has a UUID id (from Supabase) and the existing local
+      // record has a DRV-XXXXXX id, promote the UUID as the canonical id.
+      // This closes the ID gap so future updates/deletes reach the correct SB row.
+      const existingId = drivers[existingIndex].id;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const incomingId = normalized.id;
+      const shouldUpgradeId = incomingId && uuidRegex.test(incomingId) && !uuidRegex.test(existingId);
+
       drivers[existingIndex] = {
         ...drivers[existingIndex],
         ...normalized,
+        // Upgrade to SB UUID if available, otherwise keep existing id
+        id: shouldUpgradeId ? incomingId : (drivers[existingIndex].id || incomingId),
         updated_at: new Date().toISOString()
       };
     } else {
@@ -432,7 +451,7 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
 /**
  * Add operation to sync queue
  */
-export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'timestamp'>): Promise<void> => {
+export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'timestamp' | 'synced'>): Promise<void> => {
   try {
     // Always enqueue locally for offline support.
     // Even if user/session is missing, drivers/admin can still process the local queue.
@@ -441,6 +460,7 @@ export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'time
       ...operation,
       id: Date.now().toString(),
       timestamp: new Date().toISOString(),
+      synced: false,
     };
     queue.push(newOperation);
     await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
@@ -450,6 +470,7 @@ export const addToSyncQueue = async (operation: Omit<SyncOperation, 'id' | 'time
     if (user) {
       await createSyncOperation({
         ...operation,
+        synced: false,
         user_id: user.id,
       });
     } else {
@@ -684,7 +705,7 @@ export const processSyncQueue = async (): Promise<void> => {
         } else if (collection === 'drivers') {
           // Drivers updates are not needed for the immediate task,
           // but keep existing behavior using normal helpers.
-          await processSyncOperation(operation);
+          await processSyncOperation(operation, true); // pass true for service role in no-user mode
         } else {
           console.warn(`Unknown collection in local sync operation: ${collection}`);
         }
@@ -741,7 +762,7 @@ export const processSyncQueue = async (): Promise<void> => {
 /**
  * Process individual sync operation with conflict detection
  */
-const processSyncOperation = async (operation: SyncOperation): Promise<void> => {
+const processSyncOperation = async (operation: SyncOperation, useServiceRole: boolean = false): Promise<void> => {
   const { type, collection, data } = operation;
 
   switch (collection) {
@@ -749,7 +770,7 @@ const processSyncOperation = async (operation: SyncOperation): Promise<void> => 
       await processPackageOperation(type, data);
       break;
     case 'drivers':
-      await processDriverOperation(type, data);
+      await processDriverOperation(type, data, useServiceRole);
       break;
     default:
       console.warn(`Unknown collection in sync operation: ${collection}`);
@@ -839,17 +860,30 @@ const updatePackageWithConflictDetection = async (
 /**
  * Process driver sync operation
  */
-const processDriverOperation = async (type: string, data: any): Promise<void> => {
+const processDriverOperation = async (type: string, data: any, useServiceRole: boolean = false): Promise<void> => {
   switch (type) {
     case 'create':
-      await createDriver(data);
+      if (useServiceRole) {
+        await createDriverServiceRole(data);
+      } else {
+        await createDriver(data);
+      }
       break;
     case 'update':
+      // Payloads can be either { id, updates: {...} } or { id, ...fields }
+      const updates = data.updates || (() => {
+        const { id, ...rest } = data;
+        return rest;
+      })();
       // Detect conflicts before updating
-      await updateDriverWithConflictDetection(data.id, data);
+      await updateDriverWithConflictDetection(data.id, updates, useServiceRole);
       break;
     case 'delete':
-      await deleteDriver(data.id);
+      if (useServiceRole) {
+        await deleteDriverServiceRole(data.id);
+      } else {
+        await deleteDriver(data.id);
+      }
       break;
     default:
       console.warn(`Unknown driver operation type: ${type}`);
@@ -862,7 +896,8 @@ const processDriverOperation = async (type: string, data: any): Promise<void> =>
  */
 const updateDriverWithConflictDetection = async (
   id: string,
-  updates: Partial<Driver>
+  updates: Partial<Driver>,
+  useServiceRole: boolean = false
 ): Promise<void> => {
   try {
     // Get the remote version
@@ -871,15 +906,26 @@ const updateDriverWithConflictDetection = async (
     if (!remoteDriver) {
       // Driver doesn't exist remotely - just create it
       console.log(`🚚 Driver ${id} not found remotely, creating...`);
-      await createDriver(updates as any);
+      if (useServiceRole) {
+        await createDriverServiceRole(updates as any);
+      } else {
+        await createDriver(updates as any);
+      }
       return;
     }
+
+    // Fix NaN versions
+    const updateV = typeof updates.version === 'number' && !isNaN(updates.version) ? updates.version : 
+                   (typeof (updates as any)._version !== 'undefined' ? Number((updates as any)._version) || 1 : 1);
+    
+    const remoteV = typeof remoteDriver.version === 'number' && !isNaN(remoteDriver.version) ? remoteDriver.version : 
+                   (typeof (remoteDriver as any)._version !== 'undefined' ? Number((remoteDriver as any)._version) || 1 : 1);
 
     // Create a local version object for conflict detection
     const localDriver: Driver = {
       ...remoteDriver,
       ...updates,
-      version: (updates.version || remoteDriver.version) + 1,
+      version: Math.max(updateV, remoteV) + 1,
       updated_at: new Date().toISOString(),
     };
 
@@ -904,10 +950,18 @@ const updateDriverWithConflictDetection = async (
       console.log(`   Conflicting fields: ${resolution.conflictingFields.join(', ')}`);
 
       // Apply the resolved data
-      await updateDriver(id, resolution.mergedData);
+      if (useServiceRole) {
+        await updateDriverServiceRole(id, resolution.mergedData);
+      } else {
+        await updateDriver(id, resolution.mergedData);
+      }
     } else {
       // No conflict - apply update normally
-      await updateDriver(id, updates);
+      if (useServiceRole) {
+        await updateDriverServiceRole(id, updates);
+      } else {
+        await updateDriver(id, updates);
+      }
     }
   } catch (error) {
     console.error(`Error updating driver with conflict detection: ${id}`, error);

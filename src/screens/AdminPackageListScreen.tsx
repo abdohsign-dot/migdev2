@@ -796,7 +796,10 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                     setDriverPickerVisible(false);
                   }}
                 >
-                  <Text style={styles.driverName}>{driver.name}</Text>
+                  <Text style={styles.driverName}>
+                    {driver.name}
+                    {driver.zone ? ` (${driver.zone})` : ''}
+                  </Text>
                   <Text
                     style={styles.driverVehicle}
                     numberOfLines={1}
@@ -946,7 +949,10 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                   ]}
                   onPress={() => setSelectedDriverId(driver.id)}
                 >
-                  <Text style={styles.driverName}>{driver.name}</Text>
+                  <Text style={styles.driverName}>
+                    {driver.name}
+                    {driver.zone ? ` (${driver.zone})` : ''}
+                  </Text>
                   <Text style={styles.driverVehicle}>{driver.custom_id || driver.id}</Text>
                 </TouchableOpacity>
               ))}

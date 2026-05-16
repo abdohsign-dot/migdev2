@@ -459,17 +459,17 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   }, []);
 
   /**
-   * Process sync queue periodically (every 2 minutes) for failed operations
+   * Process sync queue periodically (every 30s) as a safety-net for missed immediate flushes
    */
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
         await processSyncQueue();
-        console.log('🔄 Sync queue processed');
+        console.log('🔄 Sync queue processed (periodic)');
       } catch (error) {
         console.error('Error in periodic sync queue processing:', error);
       }
-    }, 120000); // 2 minutes
+    }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
   }, []);

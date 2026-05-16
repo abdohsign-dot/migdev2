@@ -118,7 +118,14 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
     const drivers = await getDriversLocally();
 
     // Check if driver already exists
-    const existingIndex = drivers.findIndex(d => d.id === driver.id);
+    // Match by ID or custom_id to prevent duplicates when Supabase generates a new UUID
+    // but we already have the local driver stored with custom_id (e.g. DRV-XXXXXX) as its local ID.
+    const existingIndex = drivers.findIndex(d => 
+      d.id === driver.id || 
+      (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
+      (d.id && driver.custom_id && d.id === driver.custom_id) ||
+      (d.custom_id && driver.id && d.custom_id === driver.id)
+    );
 
     if (existingIndex >= 0) {
       // Update existing driver
