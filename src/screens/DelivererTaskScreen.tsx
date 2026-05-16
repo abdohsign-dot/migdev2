@@ -9,6 +9,7 @@ import { updatePackage, upsertPackageLocally } from '../utils/localDatabase';
 import { showExportOptions } from '../utils/offlineExport';
 import { sendAutoReportToAdmin } from '../utils/offlineExport';
 import { getStatusColor } from '../utils/statusColors';
+import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
 import ScannerModal from '../components/ScannerModal';
 import { getPackageDisplayRef } from '../utils/packageUtils';
 import { formatDate } from '../utils/dateFormatter';
@@ -177,11 +178,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       return;
     }
 
-    // Only add +33 prefix if number clearly starts with 0 (French format)
-    // Otherwise use the number as-is (international format)
-    const formattedPhone = phoneNumber.startsWith('0')
-      ? `33${phoneNumber.substring(1).replace(/[^0-9]/g, '')}`
-      : cleanPhoneDigits;
+    const formattedPhone = formatPhoneForWhatsApp(phoneNumber);
 
     const whatsappDeepLink = `whatsapp://send?phone=${formattedPhone}`;
     const whatsappWebFallback = `https://wa.me/${formattedPhone}`;

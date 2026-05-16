@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking, Platform } from 'react-native';
 import { getStatusColor } from '../utils/statusColors';
+import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
 import { 
   deviceType, 
   orientation, 
@@ -69,8 +70,7 @@ export default function PackageCard(props: PackageCardProps) {
 
   const handleWhatsApp = (phone?: string) => {
     if (phone) {
-      // Remove leading 0 and add country code (assuming French numbers)
-      const formattedPhone = phone.startsWith('0') ? `33${phone.substring(1)}` : phone;
+      const formattedPhone = formatPhoneForWhatsApp(phone);
       Linking.openURL(`whatsapp://send?phone=${formattedPhone}`);
     }
   };

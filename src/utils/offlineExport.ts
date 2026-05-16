@@ -9,6 +9,7 @@ import { Alert, Platform } from 'react-native';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import { Package } from '../types';
+import { formatPhoneForWhatsApp } from './phoneUtils';
 
 
 // ============================================
@@ -117,7 +118,7 @@ export const sendAutoReportToAdmin = async (packages: Package[], driverName?: st
     
     if (adminPhone) {
       // Send directly to admin WhatsApp
-      const cleanPhone = adminPhone.replace(/[^0-9]/g, '');
+      const cleanPhone = formatPhoneForWhatsApp(adminPhone);
       const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
       
       const { Linking } = require('react-native');
