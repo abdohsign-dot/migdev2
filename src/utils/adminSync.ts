@@ -11,34 +11,7 @@ import {
   markSyncOperationAsSynced,
 } from './supabaseDatabase';
 
-const ADMIN_PACKAGE_FIELDS = new Set<string>([
-  'ref_number',
-  'status',
-  'customer_name',
-  'customer_address',
-  'customer_phone',
-  'customer_phone_2',
-  'sender_name',
-  'sender_company',
-  'sender_phone',
-  'date_of_arrive',
-  'description',
-  'weight',
-  'price',
-  'is_paid',
-  'limit_date',
-  'limit_time',
-  'gps_lat',
-  'gps_lng',
-  'assigned_to',
-  'assigned_at',
-  'accepted_at',
-  'delivered_at',
-  'return_reason',
-  'supplement_info',
-  'is_archived',
-  'archived_at',
-]);
+import { filterModifiableFields } from './ownershipRules';
 
 const ADMIN_DRIVER_FIELDS = new Set<string>([
   'custom_id',
@@ -49,12 +22,6 @@ const ADMIN_DRIVER_FIELDS = new Set<string>([
   'pin_code',
   'is_active',
 ]);
-
-const filterPackageFields = (changes: Partial<Package>): Partial<Package> => {
-  return Object.fromEntries(
-    Object.entries(changes).filter(([key]) => ADMIN_PACKAGE_FIELDS.has(key))
-  ) as Partial<Package>;
-};
 
 const filterDriverFields = (changes: Partial<Driver>): Partial<Driver> => {
   return Object.fromEntries(
@@ -99,7 +66,7 @@ export const adminUpdatePackage = async (
   changes: Partial<Package>,
   context: OperationContext
 ): Promise<Package> => {
-  const filtered = filterPackageFields(changes);
+  const filtered = filterModifiableFields(changes, context) as Partial<Package>;
   const payload = stripJsOnlyPackageFields(filtered);
   return await updatePackage(id, {
     ...payload,

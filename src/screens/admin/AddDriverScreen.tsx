@@ -97,7 +97,8 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           version: 1,
-          source: 'local' as const
+          source: 'local' as const,
+          auditLog: []
         };
         
         await storeDriverLocally(driverObj);

@@ -187,6 +187,7 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
         accepted_at: undefined,
         delivered_at: undefined,
         return_reason: undefined,
+        statusHistory: [],
       });
 
       Alert.alert("Succès", "Colis créé avec succès !");

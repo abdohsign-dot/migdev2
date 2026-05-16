@@ -161,6 +161,31 @@ export const clearSensitiveDataCache = (): void => {
   _sensitiveCache.clear();
 };
 
+/**
+ * Clear specific role partitions on logout
+ */
+export const clearRolePartitions = async (role: 'admin' | 'deliverer' | null, driverId: string | null): Promise<void> => {
+  try {
+    if (role === 'admin') {
+      await AsyncStorage.removeItem(ADMIN_PACKAGES_KEY);
+      await AsyncStorage.removeItem(ADMIN_DRIVERS_KEY);
+      await AsyncStorage.removeItem(ADMIN_SYNC_QUEUE_KEY);
+      await AsyncStorage.removeItem(ADMIN_LAST_SYNC_KEY);
+      console.log(`🗑️ Admin partition cleared`);
+    } else if (role === 'deliverer' && driverId) {
+      const storageDriverId = await resolveDriverStorageId(driverId);
+      if (storageDriverId) {
+        await AsyncStorage.removeItem(getDriverPackagesKey(storageDriverId));
+        await AsyncStorage.removeItem(getDriverSyncQueueKey(storageDriverId));
+        await AsyncStorage.removeItem(getDriverLastSyncKey(storageDriverId));
+        console.log(`🗑️ Driver partition cleared for ${driverId}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error clearing role partitions:', error);
+  }
+};
+
 const getPackagesFromStorage = async (driverId?: string): Promise<Package[]> => {
   try {
     const data = await AsyncStorage.getItem(getPackageStorageKey(driverId));

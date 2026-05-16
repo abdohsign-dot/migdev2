@@ -6,22 +6,7 @@ import {
   markSyncOperationAsSynced,
 } from './supabaseDatabase';
 
-const DRIVER_PACKAGE_FIELDS = new Set<string>([
-  'status',
-  'gps_lat',
-  'gps_lng',
-  'delivered_at',
-  'return_reason',
-  'completion_notes',
-  'is_archived',
-  'archived_at',
-]);
-
-const filterDriverPackageFields = (changes: Partial<Package>): Partial<Package> => {
-  return Object.fromEntries(
-    Object.entries(changes).filter(([key]) => DRIVER_PACKAGE_FIELDS.has(key))
-  ) as Partial<Package>;
-};
+import { filterModifiableFields } from './ownershipRules';
 
 const stripJsOnlyPackageFields = (pkg: Partial<Package>): Partial<Package> => {
   const {
@@ -41,7 +26,7 @@ export const driverUpdateMissionStatus = async (
   changes: Partial<Package>,
   context: OperationContext
 ): Promise<Package> => {
-  const filtered = filterDriverPackageFields(changes);
+  const filtered = filterModifiableFields(changes, context) as Partial<Package>;
   const payload = stripJsOnlyPackageFields(filtered);
   return await updatePackage(id, {
     ...payload,

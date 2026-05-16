@@ -33,6 +33,10 @@ const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     console.log('🔄 Logout initiated');
     
+    // Capture current state before clearing
+    const currentRole = useAuthStore.getState().userRole;
+    const currentDriverId = useAuthStore.getState().driverId;
+    
     // Clear auth state first
     set({ 
       userRole: null, 
@@ -47,13 +51,25 @@ const useAuthStore = create<AuthState>((set) => ({
     setTimeout(() => {
       console.log('🔄 Starting async cleanup...');
       
+      // Clear realtime listeners
+      try {
+        const { cleanupListeners } = require('../utils/supabaseRealtime');
+        cleanupListeners('all');
+        console.log('✅ Realtime listeners cleared');
+      } catch (error) {
+        console.log('ℹ️ Could not clear listeners:', error);
+      }
+      
       // Clear in-memory sensitive data cache (prevents data leaking between sessions)
       try {
-        const { clearSensitiveDataCache } = require('../utils/localDatabase');
+        const { clearSensitiveDataCache, clearRolePartitions } = require('../utils/localDatabase');
         clearSensitiveDataCache();
         console.log('✅ Sensitive data cache cleared');
+        
+        // Clear partition data for the logged out user
+        clearRolePartitions(currentRole, currentDriverId);
       } catch (error) {
-        console.log('ℹ️ Could not clear sensitive data cache:', error);
+        console.log('ℹ️ Could not clear sensitive data cache or role partitions:', error);
       }
 
       // Clear secure storage cache

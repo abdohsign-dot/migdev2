@@ -17,13 +17,13 @@
 - [x] Wire driver-specific sync queue partitioning through local and shared sync helpers
 
 ### In progress / next
-- [ ] Update `useAuthStore` - add cleanup on logout
+- [x] Update `useAuthStore` - add cleanup on logout
 - [ ] Create role-based navigation wrapper
 - [ ] Separate admin screens into `/admin` folder
 - [ ] Separate driver screens into `/driver` folder
 - [ ] Update all admin screens to use `useAdminStore`
 - [ ] Update all driver screens to use `useDriverStore`
-- [ ] Enforce field ownership rules in sync logic
+- [x] Enforce field ownership rules in sync logic
 - [ ] Add operation context to every DB operation
 - [ ] Add tombstones for deleted records
 - [ ] Update conflict detection with context awareness
@@ -36,14 +36,14 @@
 - `src/utils/localDatabase.ts` now uses role-partitioned storage keys for admin and driver packages, sync queues, and last sync timestamps.
 - `src/utils/supabaseSync.ts` now supports driver-scoped queue keys and `processSyncQueue(driverId)`.
 - `src/hooks/useLocalDatabase.ts` now forwards `driverId` into `addToSyncQueue(...)` and periodic queue processing.
+- `src/store/useAuthStore.ts` now cleans up Realtime listeners and role-specific partitions on logout.
+- `src/utils/ownershipRules.ts` was added to validate role-based field modifications.
+- `src/utils/adminSync.ts` and `src/utils/driverSync.ts` now use `filterModifiableFields` to strictly enforce role ownership over modified fields.
 
 ## Known remaining compile issues
-- `src/screens/AddDriverScreen.tsx` still needs `auditLog` when creating local drivers.
-- `src/screens/AddPackageScreen.tsx` still needs `statusHistory` when creating packages.
+- None currently known.
 
 ## Recommended next actions
-1. Add logout cleanup to `useAuthStore` and local db partition cleanup.
-2. Add field ownership validation utilities and enforce them in sync operations.
-3. Implement role-based navigation and move screens into `/admin` and `/driver` folders.
-4. Add tombstone and history tracking utilities.
-5. Add tests for role switch listener cleanup, sync queue partitioning, and offline recovery.
+1. Implement role-based navigation and move screens into `/admin` and `/driver` folders.
+2. Add tombstone and history tracking utilities.
+3. Add tests for role switch listener cleanup, sync queue partitioning, and offline recovery.
