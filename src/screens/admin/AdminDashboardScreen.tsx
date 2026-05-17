@@ -45,22 +45,12 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
     setAdminLoading(localLoading);
   }, [localPackages, localDrivers, localLoading, setAdminPackages, setAdminDrivers, setAdminLoading]);
   
-  const [statsLoading, setStatsLoading] = useState(true);
   const isFocused = useIsFocused();
-  // (Avoid multiple refreshes on mount+focus which can cause visible blinking)
+  // Sync in background on focus so that local dashboard data loads instantly without blocking the UI
   useEffect(() => {
     if (!isFocused) return;
-
-    const loadStats = async () => {
-      setStatsLoading(true);
-      await refresh();
-      setStatsLoading(false);
-    };
-
-    loadStats();
+    refresh();
   }, [isFocused, refresh]);
-
-
 
   // Use real-time stats from hook
   const totalPackages = packageStats?.total || adminPackages.length || 0;
@@ -70,7 +60,7 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
   const deliveredPackages = packageStats?.delivered || 0;
   const returnedPackages = packageStats?.returned || 0;
 
-  if (adminLoading || statsLoading) {
+  if (adminLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
