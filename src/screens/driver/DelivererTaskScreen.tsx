@@ -13,6 +13,7 @@ import { formatPhoneForWhatsApp } from '../../utils/phoneUtils';
 import ScannerModal from '../../components/ScannerModal';
 import { getPackageDisplayRef } from '../../utils/packageUtils';
 import { formatDate } from '../../utils/dateFormatter';
+import useDriverStore from '../../store/useDriverStore';
 import { 
   Responsive, 
   deviceType, 
@@ -30,12 +31,17 @@ import {
 
 export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenProps) {
   const { driverId, logout } = useAuthStore();
-  
+
+  const assignedMissions = useDriverStore((s) => s.assignedMissions);
+  const setAssignedMissions = useDriverStore((s) => s.setAssignedMissions);
+  const updateMissionStatus = useDriverStore((s) => s.updateMissionStatus);
+  const addMission = useDriverStore((s) => s.addMission);
+
   // Use local database hook - drivers only sync their packages
-  const { 
-    packages: localPackages, 
-    loading, 
-    syncing, 
+  const {
+    packages: localPackages,
+    loading,
+    syncing,
     lastSync,
     pendingSyncCount,
     isOnline,
@@ -44,7 +50,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     reloadLocalData,
     updatePackageInState,
     addPackageToState,
-    updatePackageStatus 
+    updatePackageStatus,
   } = useLocalDatabase({ driverId: driverId || undefined, isAdmin: false });
 
   // Return Modal State
@@ -84,6 +90,11 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     })));
   }, [driverId, localPackages]);
 
+  // Hydrate driver store from local DB missions
+  useEffect(() => {
+    setAssignedMissions(localPackages as any);
+  }, [localPackages, setAssignedMissions]);
+
   // Sort packages by next delivery deadline (limit_date + optional limit_time)
   const getDeadlineMillis = (pkg: any): number | null => {
     if (!pkg?.limit_date) return null;
@@ -105,7 +116,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
   };
 
   const packages = React.useMemo(() => {
-    return [...localPackages].sort((a: any, b: any) => {
+    return [...assignedMissions].sort((a: any, b: any) => {
       const aMs = getDeadlineMillis(a);
       const bMs = getDeadlineMillis(b);
       if (aMs === null && bMs === null) return 0;
@@ -117,11 +128,13 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
       return aCreated - bCreated;
     });
-  }, [localPackages]);
+  }, [assignedMissions]);
 
   // Filter packages based on hide completed tasks setting
-  const filteredPackages = hideCompletedTasks 
-    ? packages.filter(p => p.status !== 'Delivered' && p.status !== 'Returned' && p.status !== 'Archived')
+  const filteredPackages = hideCompletedTasks
+    ? packages.filter(
+        (p) => p.status !== 'Delivered' && p.status !== 'Returned' && p.status !== 'Archived'
+      )
     : packages;
 
   // Calculate total price for all packages (not filtered)
@@ -141,29 +154,61 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       "Voulez-vous accepter cette mission de livraison ?",
       [
         { text: "Annuler", style: "cancel" },
-        { 
-          text: "Accepter", 
+        {
+          text: "Accepter",
           onPress: async () => {
             try {
+              const now = new Date().toISOString();
+
               await updatePackageStatus(pkgId, 'In Transit', {
-                accepted_at: new Date().toISOString(),
+                accepted_at: now,
               });
+
+              updateMissionStatus(
+                pkgId,
+                { status: 'In Transit', accepted_at: now } as any,
+                {
+                  actorId: driverId || 'unknown',
+                  actorRole: 'driver',
+                  operationId: Date.now().toString(),
+                  deviceId: 'unknown',
+                  updatedAt: now,
+                  source: 'app',
+                }
+              );
+
               ToastAndroid.show('Mission acceptée avec succès', ToastAndroid.SHORT);
             } catch (error) {
               console.error('Accept task error:', error);
               Alert.alert("Erreur", "Impossible d'accepter la mission. Vérifiez votre connexion.");
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
 
   const handleDeliverTask = async (pkgId: string) => {
     try {
+      const now = new Date().toISOString();
+
       await updatePackageStatus(pkgId, 'Delivered', {
-        delivered_at: new Date().toISOString(),
+        delivered_at: now,
       });
+
+      updateMissionStatus(
+        pkgId,
+        { status: 'Delivered', delivered_at: now } as any,
+        {
+          actorId: driverId || 'unknown',
+          actorRole: 'driver',
+          operationId: Date.now().toString(),
+          deviceId: 'unknown',
+          updatedAt: now,
+          source: 'app',
+        }
+      );
+
       ToastAndroid.show('✅ Colis livré avec succès', ToastAndroid.SHORT);
     } catch (error) {
       Alert.alert("Erreur", "Impossible de valider la livraison. Réessayez.");
@@ -286,13 +331,32 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     }
 
     setReturningPackageId(selectedPackageId);
-    
+
     try {
+      const now = new Date().toISOString();
+
       await updatePackageStatus(selectedPackageId, 'Returned', {
         return_reason: returnReason.trim(),
-        delivered_at: new Date().toISOString(), // Mark as processed
+        delivered_at: now, // Mark as processed
       });
-      
+
+      updateMissionStatus(
+        selectedPackageId,
+        {
+          status: 'Returned',
+          return_reason: returnReason.trim(),
+          delivered_at: now,
+        } as any,
+        {
+          actorId: driverId || 'unknown',
+          actorRole: 'driver',
+          operationId: Date.now().toString(),
+          deviceId: 'unknown',
+          updatedAt: now,
+          source: 'app',
+        }
+      );
+
       ToastAndroid.show('📦 Colis retourné avec succès', ToastAndroid.SHORT);
       setReturnModalVisible(false);
       setReturnReason('');
@@ -466,7 +530,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
     // Find package by ID or Ref Number (local only)
     const foundPkg = packages.find(
-      p => p.id === searchRef || p.ref_number?.toLowerCase() === searchRef.toLowerCase()
+      (p) => p.id === searchRef || p.ref_number?.toLowerCase() === searchRef.toLowerCase()
     );
 
     if (foundPkg) {
@@ -567,6 +631,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
     // Update local state immediately for instant UI update
     addPackageToState(draftPkg);
+    addMission(draftPkg);
 
     console.log('📱 Package added to UI state, packages count:', localPackages.length + 1);
 

@@ -1,120 +1,149 @@
 /**
  * Driver Credentials Screen
- * 
+ *
  * Admin-only screen to view and manage the 20 pre-generated driver credentials.
  * Shows ID, PIN, and allows admin to assign name/phone to each credential.
- * Assignments are stored locally in encrypted storage.
+ *
+ * IMPORTANT MIGRATION:
+ * - Removed secureStorage-based assignments
+ * - Assigned state is derived from Driver records in useAdminStore (name/phone + is_active)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ToastAndroid, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { setSecureItem, getSecureItem, SECURE_KEYS } from '../../utils/secureStorage';
 import { DRIVER_CREDENTIALS, DriverCredential } from '../../config/credentials';
+import useAdminStore from '../../store/useAdminStore';
+import type { Driver } from '../../types';
 
 interface DriverCredentialsScreenProps {
   navigation: any;
 }
 
-interface DriverAssignment {
-  id: string;
-  name: string;
-  phone: string;
-  assigned_at: string;
-}
-
-const ASSIGNMENTS_KEY = SECURE_KEYS.DRIVER_ASSIGNMENTS;
-
 export default function DriverCredentialsScreen({ navigation }: DriverCredentialsScreenProps) {
   const [drivers] = useState<DriverCredential[]>(DRIVER_CREDENTIALS);
-  const [assignments, setAssignments] = useState<Map<string, DriverAssignment>>(new Map());
-  const [loading, setLoading] = useState(true);
-  
+
+  const adminDrivers = useAdminStore((state) => state.drivers);
+
   // Assignment Modal State
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Load assignments from encrypted storage
-  useEffect(() => {
-    loadAssignments();
-  }, []);
+  const credentialIdToDriverRecord = useMemo(() => {
+    const map = new Map<string, Driver>();
 
-  const loadAssignments = async () => {
-    try {
-      const stored = await getSecureItem(ASSIGNMENTS_KEY);
-      if (stored) {
-        const map = new Map<string, DriverAssignment>(Object.entries(stored));
-        setAssignments(map);
-      }
-    } catch (error) {
-      console.error('Error loading assignments:', error);
-    } finally {
-      setLoading(false);
+    for (const d of adminDrivers) {
+      // Defensive matching: local DB may store either `id` or `custom_id`
+      if (d.custom_id && !map.has(d.custom_id)) map.set(d.custom_id, d);
+      if (!map.has(d.id)) map.set(d.id, d);
     }
-  };
 
-  const saveAssignments = async (newAssignments: Map<string, DriverAssignment>) => {
-    try {
-      const obj = Object.fromEntries(newAssignments);
-      await setSecureItem(ASSIGNMENTS_KEY, obj);
-      setAssignments(newAssignments);
-      
-    } catch (error) {
-      console.error('Error saving assignments:', error);
-      
-      throw error;
-    }
+    return map;
+  }, [adminDrivers]);
+
+  const findDriverRecordForCredentialId = (credentialId: string): Driver | undefined => {
+    return credentialIdToDriverRecord.get(credentialId);
   };
 
   const openAssignModal = (driverId: string) => {
-    const existing = assignments.get(driverId);
+    const record = findDriverRecordForCredentialId(driverId);
+
+    if (!record) {
+      Alert.alert(
+        'ID non trouvé',
+        "Aucun livreur correspondant à cet ID n'existe dans la base. Activez d'abord cet ID puis réessayez."
+      );
+      return;
+    }
+
     setSelectedDriverId(driverId);
-    setDriverName(existing?.name || '');
-    setDriverPhone(existing?.phone || '');
+    setDriverName(record.name || '');
+    setDriverPhone(record.phone || '');
     setAssignModalVisible(true);
+  };
+
+  const persistDriverUpdate = async (updatedDriver: Driver) => {
+    const { storeDriverLocally, addToSyncQueue, processSyncQueue, syncDriversFromSupabase } = await import('../../utils/supabaseSync');
+
+    await storeDriverLocally(updatedDriver);
+
+    await addToSyncQueue({
+      type: 'update',
+      collection: 'drivers',
+      data: {
+        id: updatedDriver.id,
+        updates: {
+          name: updatedDriver.name,
+          phone: updatedDriver.phone,
+          is_active: updatedDriver.is_active,
+          updated_at: updatedDriver.updated_at,
+          version: updatedDriver.version,
+        },
+      },
+    });
+
+    // Flush + pull fresh state like AddDriverScreen pattern
+    processSyncQueue()
+      .then(() => syncDriversFromSupabase())
+      .catch((e: any) => console.warn('⚠️ Background sync after driver update failed:', e));
   };
 
   const handleAssign = async () => {
     if (!selectedDriverId) return;
 
-    if (!driverName.trim()) {
+    const trimmedName = driverName.trim();
+    const trimmedPhone = driverPhone.trim();
+
+    if (!trimmedName) {
       ToastAndroid.show('Le nom est requis', ToastAndroid.SHORT);
       return;
     }
-
-    if (!driverPhone.trim()) {
+    if (!trimmedPhone) {
       ToastAndroid.show('Le téléphone est requis', ToastAndroid.SHORT);
       return;
     }
 
-    setSaving(true);
-    try {
-      const newAssignments = new Map(assignments);
-      newAssignments.set(selectedDriverId, {
-        id: selectedDriverId,
-        name: driverName.trim(),
-        phone: driverPhone.trim(),
-        assigned_at: new Date().toISOString(),
-      });
+    const record = findDriverRecordForCredentialId(selectedDriverId);
+    if (!record) {
+      Alert.alert('ID non trouvé', "Aucun livreur correspondant à cet ID n'existe dans la base.");
+      return;
+    }
 
-      await saveAssignments(newAssignments);
-      
+    setSaving(true);
+    setLoading(true);
+    try {
+      const updated: Driver = {
+        ...record,
+        name: trimmedName,
+        phone: trimmedPhone,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+        version: (record.version || 1) + 1,
+      };
+
+      await persistDriverUpdate(updated);
+
       setAssignModalVisible(false);
       setSelectedDriverId(null);
       setDriverName('');
       setDriverPhone('');
       ToastAndroid.show('Livreur assigné avec succès', ToastAndroid.SHORT);
     } catch (error) {
+      console.error('Assign error:', error);
       Alert.alert('Erreur', 'Impossible de sauvegarder l\'assignation');
     } finally {
       setSaving(false);
+      setLoading(false);
     }
   };
 
   const handleUnassign = (driverId: string) => {
+    const record = findDriverRecordForCredentialId(driverId);
+
     Alert.alert(
       'Retirer l\'assignation',
       'Voulez-vous retirer ce livreur?',
@@ -124,13 +153,31 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
           text: 'Confirmer',
           style: 'destructive',
           onPress: async () => {
+            if (!record) {
+              ToastAndroid.show('Aucune assignation trouvée', ToastAndroid.SHORT);
+              return;
+            }
+
+            setSaving(true);
+            setLoading(true);
             try {
-              const newAssignments = new Map(assignments);
-              newAssignments.delete(driverId);
-              await saveAssignments(newAssignments);
+              const updated: Driver = {
+                ...record,
+                name: '',
+                phone: '',
+                is_active: false,
+                updated_at: new Date().toISOString(),
+                version: (record.version || 1) + 1,
+              };
+
+              await persistDriverUpdate(updated);
               ToastAndroid.show('Assignation retirée', ToastAndroid.SHORT);
             } catch (error) {
+              console.error('Unassign error:', error);
               Alert.alert('Erreur', 'Impossible de retirer l\'assignation');
+            } finally {
+              setSaving(false);
+              setLoading(false);
             }
           }
         }
@@ -138,38 +185,24 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
     );
   };
 
-  const toggleDriverStatus = (driverId: string) => {
-    Alert.alert(
-      'Changer le Statut',
-      'Voulez-vous activer/désactiver ce livreur?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Confirmer',
-          onPress: () => {
-            // Note: This is local state only, not persisted
-            // In production, you'd want to persist this to AsyncStorage too
-            const driver = drivers.find(d => d.id === driverId);
-            if (driver) {
-              driver.is_active = !driver.is_active;
-              ToastAndroid.show(
-                driver.is_active ? 'Livreur activé' : 'Livreur désactivé',
-                ToastAndroid.SHORT
-              );
-            }
-          }
-        }
-      ]
-    );
+  const isAssignedByCredentialId = (credentialId: string) => {
+    const record = findDriverRecordForCredentialId(credentialId);
+    return !!record && !!record.is_active && !!record.name?.trim() && !!record.phone?.trim();
   };
 
-  const copyToClipboard = (text: string, label: string) => {
-    ToastAndroid.show(`${label}: ${text}`, ToastAndroid.LONG);
-  };
+  const assignedCount = useMemo(() => {
+    let count = 0;
+    for (const c of drivers) {
+      if (isAssignedByCredentialId(c.id)) count++;
+    }
+    return count;
+  }, [drivers, adminDrivers]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const availableCount = drivers.length - assignedCount;
 
   const renderDriverCard = ({ item }: { item: DriverCredential }) => {
-    const assignment = assignments.get(item.id);
-    const isAssigned = !!assignment;
+    const record = findDriverRecordForCredentialId(item.id);
+    const isAssigned = !!record && !!record.is_active && !!record.name?.trim() && !!record.phone?.trim();
 
     return (
       <View style={[styles.card, !item.is_active && styles.cardInactive]}>
@@ -193,38 +226,29 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
             </View>
           </View>
 
-          {isAssigned && assignment ? (
+          {isAssigned && record ? (
             <>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Nom:</Text>
-                <Text style={styles.infoValue}>{assignment.name}</Text>
+                <Text style={styles.infoValue}>{record.name}</Text>
               </View>
 
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Téléphone:</Text>
-                <Text style={styles.infoValue}>{assignment.phone}</Text>
+                <Text style={styles.infoValue}>{record.phone}</Text>
               </View>
 
               <View style={styles.cardActions}>
-                <TouchableOpacity 
-                  style={styles.editBtn}
-                  onPress={() => openAssignModal(item.id)}
-                >
+                <TouchableOpacity style={styles.editBtn} onPress={() => openAssignModal(item.id)}>
                   <Text style={styles.editBtnText}>✏️ Modifier</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.unassignBtn}
-                  onPress={() => handleUnassign(item.id)}
-                >
+                <TouchableOpacity style={styles.unassignBtn} onPress={() => handleUnassign(item.id)}>
                   <Text style={styles.unassignBtnText}>✕ Retirer</Text>
                 </TouchableOpacity>
               </View>
             </>
           ) : (
-            <TouchableOpacity 
-              style={styles.assignBtn}
-              onPress={() => openAssignModal(item.id)}
-            >
+            <TouchableOpacity style={styles.assignBtn} onPress={() => openAssignModal(item.id)} disabled={loading}>
               <Text style={styles.assignBtnText}>+ Assigner à un Livreur</Text>
             </TouchableOpacity>
           )}
@@ -232,9 +256,6 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
       </View>
     );
   };
-
-  const assignedCount = assignments.size;
-  const availableCount = drivers.length - assignedCount;
 
   if (loading) {
     return (
@@ -274,7 +295,7 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
       <View style={styles.infoBox}>
         <Text style={styles.infoBoxTitle}>ℹ️ Information</Text>
         <Text style={styles.infoBoxText}>
-          Assignez un ID à un livreur en ajoutant son nom et téléphone. 
+          Assignez un ID à un livreur en ajoutant son nom et téléphone.
           Le livreur pourra se connecter avec l'ID et le PIN que vous lui communiquez.
         </Text>
         <Text style={[styles.infoBoxText, { marginTop: 8, fontWeight: '600' }]}>
@@ -295,9 +316,9 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              {assignments.get(selectedDriverId || '') ? 'Modifier' : 'Assigner'} {selectedDriverId}
+              {isAssignedByCredentialId(selectedDriverId || '') ? 'Modifier' : 'Assigner'} {selectedDriverId}
             </Text>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Nom du Livreur *</Text>
               <TextInput
@@ -323,8 +344,8 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
             </View>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={styles.cancelBtn} 
+              <TouchableOpacity
+                style={styles.cancelBtn}
                 onPress={() => {
                   setAssignModalVisible(false);
                   setSelectedDriverId(null);
@@ -334,8 +355,9 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
               >
                 <Text style={styles.cancelText}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.confirmBtn, saving && styles.confirmBtnDisabled]} 
+
+              <TouchableOpacity
+                style={[styles.confirmBtn, saving && styles.confirmBtnDisabled]}
                 onPress={handleAssign}
                 disabled={saving}
               >
@@ -343,7 +365,7 @@ export default function DriverCredentialsScreen({ navigation }: DriverCredential
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <Text style={styles.confirmText}>
-                    {assignments.get(selectedDriverId || '') ? 'Modifier' : 'Assigner'}
+                    {isAssignedByCredentialId(selectedDriverId || '') ? 'Modifier' : 'Assigner'}
                   </Text>
                 )}
               </TouchableOpacity>
