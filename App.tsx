@@ -13,6 +13,8 @@ LogBox.ignoreLogs([
   'SafeAreaView has been deprecated'
 ]);
 
+import SyncStatusBanner from './src/components/SyncStatusBanner';
+
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +135,7 @@ export default function App() {
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <ErrorBoundary>
         <RoleBasedNavigator />
+        <SyncStatusBanner />
       </ErrorBoundary>
     </SafeAreaProvider>
   );

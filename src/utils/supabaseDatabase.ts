@@ -466,7 +466,9 @@ export const getDrivers = async (): Promise<Driver[]> => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    const parsed = data || [];
+    // Filter out SYSTEM_ADMIN_PIN record from active lists
+    return parsed.filter(d => d.custom_id !== 'SYSTEM_ADMIN_PIN');
   } catch (error) {
     console.error('Error getting drivers:', error);
     throw error;

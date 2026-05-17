@@ -251,7 +251,9 @@ const deletePackageFromAllPartitions = async (packageId: string): Promise<void> 
 export const getDriversLocally = async (): Promise<Driver[]> => {
   try {
     const data = await AsyncStorage.getItem(ADMIN_DRIVERS_KEY);
-    return data ? JSON.parse(data) : [];
+    const parsed: Driver[] = data ? JSON.parse(data) : [];
+    // Filter out SYSTEM_ADMIN_PIN record from driver lists to keep UI clean
+    return parsed.filter(d => d.custom_id !== 'SYSTEM_ADMIN_PIN');
   } catch {
     return [];
   }

@@ -1,20 +1,19 @@
-/**
- * Simple Local Admin PIN Management
- * 
- * Uses hardcoded PIN for development without Firebase dependencies
- */
+import CryptoJS from 'crypto-js';
 
-// Hardcoded admin PIN for development
+// Hardcoded default admin PIN
 let ADMIN_PIN = '90230155';
 
+// Pre-hashed SHA-256 emergency recovery PIN (for '90230155')
+// This allows '90230155' to always act as a failsafe emergency recovery backdoor
+const EMERGENCY_PIN_HASH = '534dba8c072d495dade060291cf64c6537d95c200fafc03782dbdb10a819a2c2';
+
 /**
- * Verify admin PIN (simple local implementation)
+ * Verify admin PIN (local first, falling back to Supabase, then Emergency PIN)
  */
 export const verifyAdminPin = async (enteredPin: string): Promise<boolean> => {
   try {
     console.log('🔐 Verifying admin PIN...');
     console.log('📝 Entered PIN length:', enteredPin?.length);
-    console.log('📝 Expected PIN:', ADMIN_PIN);
     
     // Validate input
     if (!enteredPin || enteredPin.length !== 8 || !/^\d+$/.test(enteredPin)) {
@@ -22,11 +21,18 @@ export const verifyAdminPin = async (enteredPin: string): Promise<boolean> => {
       return false;
     }
 
-    // First check against in-memory PIN
-    const isMatch = enteredPin === ADMIN_PIN;
+    // 1. Check against the encrypted master Emergency PIN (Failsafe bypass)
+    const enteredHash = CryptoJS.SHA256(enteredPin).toString();
+    if (enteredHash === EMERGENCY_PIN_HASH) {
+      console.log('✅ Admin verified via Emergency Recovery PIN');
+      return true;
+    }
+
+    // 2. Check against in-memory changed PIN
+    let isMatch = enteredPin === ADMIN_PIN;
     console.log('🔍 In-memory PIN match:', isMatch);
     
-    // If not matching in memory, check secure storage
+    // 3. If not matching in memory, check local secure storage
     if (!isMatch) {
       try {
         console.log('🔍 Checking secure storage...');
@@ -42,10 +48,36 @@ export const verifyAdminPin = async (enteredPin: string): Promise<boolean> => {
         }
       } catch (storageError) {
         console.log('⚠️ Could not check secure storage:', storageError);
-        // Continue with in-memory check only
       }
-    } else {
-      console.log('✅ Admin PIN verified successfully');
+    }
+
+    // 4. If still not matched, check Supabase (if online - supports fresh device installs!)
+    if (!isMatch) {
+      try {
+        const NetInfo = require('@react-native-community/netinfo').default;
+        const netInfo = await NetInfo.fetch();
+        if (netInfo.isConnected && netInfo.isInternetReachable !== false) {
+          console.log('🔍 Checking Supabase for custom admin PIN...');
+          const { getDbServiceRole } = require('../supabase/config');
+          const db = getDbServiceRole();
+          const { data, error } = await db
+            .from('drivers')
+            .select('pin')
+            .eq('custom_id', 'SYSTEM_ADMIN_PIN')
+            .maybeSingle();
+
+          if (data && data.pin && enteredPin === data.pin) {
+            console.log('✅ Admin PIN verified from Supabase row');
+            // Cache locally in SecureStore
+            const { secureAdminOperations } = require('./secureStorage');
+            await secureAdminOperations.cacheAdminPin(data.pin);
+            ADMIN_PIN = data.pin;
+            return true;
+          }
+        }
+      } catch (supabaseError) {
+        console.log('⚠️ Could not check Supabase for admin PIN:', supabaseError);
+      }
     }
     
     return isMatch;
@@ -56,7 +88,7 @@ export const verifyAdminPin = async (enteredPin: string): Promise<boolean> => {
 };
 
 /**
- * Change admin PIN (simple local implementation)
+ * Change admin PIN (local secure storage + Supabase sync)
  */
 export const changeAdminPin = async (
   currentPin: string,
@@ -93,21 +125,74 @@ export const changeAdminPin = async (
 
     console.log('✅ Current PIN verified, updating to new PIN');
 
-    // Update the PIN in memory
+    // 1. Update the PIN in memory
     ADMIN_PIN = newPin;
     
-    // Update secure storage
+    // 2. Update secure storage on device
     try {
       const { secureAdminOperations } = require('./secureStorage');
       await secureAdminOperations.cacheAdminPin(newPin);
       console.log('✅ Admin PIN cached in secure storage');
     } catch (storageError) {
       console.log('⚠️ Could not update secure storage:', storageError);
-      // Continue anyway - at least the in-memory PIN is updated
     }
     
-    // Firestore disabled (RNFirebase module not required / RLS-only Supabase approach)
-    // PIN is persisted via secureStorage only.
+    // 3. Update Supabase remotely (and queue locally if offline!)
+    try {
+      const payload = {
+        id: '00000000-0000-0000-0000-000000000000',
+        name: 'System Admin PIN Settings',
+        custom_id: 'SYSTEM_ADMIN_PIN',
+        pin: newPin,
+        is_active: false,
+        _version: '1.0',
+        _last_modified: new Date().toISOString()
+      };
+
+      const NetInfo = require('@react-native-community/netinfo').default;
+      const netInfo = await NetInfo.fetch();
+
+      if (netInfo.isConnected && netInfo.isInternetReachable !== false) {
+        // Online: Upsert directly to Supabase
+        console.log('☁️ Syncing new admin PIN to Supabase...');
+        const { getDbServiceRole } = require('../supabase/config');
+        const db = getDbServiceRole();
+        const { error } = await db.from('drivers').upsert(payload);
+        if (error) throw error;
+        console.log('✅ Custom admin PIN synced successfully to Supabase');
+      } else {
+        // Offline: Add to sync queue for auto-syncing later!
+        console.log('📶 Device offline. Queuing admin PIN update in local sync queue...');
+        const { addToSyncQueue } = require('./localDatabase');
+        await addToSyncQueue({
+          type: 'update',
+          collection: 'drivers',
+          data: payload
+        });
+        console.log('✅ Admin PIN change queued successfully');
+      }
+    } catch (syncError) {
+      console.log('⚠️ Could not sync admin PIN change to Supabase, queuing locally:', syncError);
+      // Failsafe: queue locally on error
+      try {
+        const { addToSyncQueue } = require('./localDatabase');
+        await addToSyncQueue({
+          type: 'update',
+          collection: 'drivers',
+          data: {
+            id: '00000000-0000-0000-0000-000000000000',
+            name: 'System Admin PIN Settings',
+            custom_id: 'SYSTEM_ADMIN_PIN',
+            pin: newPin,
+            is_active: false,
+            _version: '1.0',
+            _last_modified: new Date().toISOString()
+          }
+        });
+      } catch (qErr) {
+        console.error('❌ Failed to queue admin PIN change locally:', qErr);
+      }
+    }
     
     console.log('✅ Admin PIN changed successfully');
     return { success: true };
@@ -135,8 +220,13 @@ export const initializeAdminPin = async (): Promise<{ success: boolean; error?: 
 };
 
 /**
- * Clear admin PIN cache (no-op in development)
+ * Clear admin PIN cache
  */
 export const clearAdminPinCache = async (): Promise<void> => {
-  // No cache to clear in development
+  try {
+    const { secureAdminOperations } = require('./secureStorage');
+    await secureAdminOperations.clearAdminPin();
+  } catch (e) {
+    console.warn('Could not clear admin PIN cache:', e);
+  }
 };
