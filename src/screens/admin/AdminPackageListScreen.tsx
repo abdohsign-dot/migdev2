@@ -251,8 +251,19 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       // Tie-breaker: earlier created_at first
       const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return aCreated - bCreated;
     });
+  }, [filteredPackages]);
+
+  // Sum of prices of all filtered packages
+  const filteredTotalPrice = React.useMemo(() => {
+    return filteredPackages.reduce((sum, pkg: any) => sum + (pkg.price || 0), 0);
+  }, [filteredPackages]);
+
+  // Sum of prices of delivered packages in the filtered list
+  const filteredDeliveredPrice = React.useMemo(() => {
+    return filteredPackages
+      .filter((p: any) => p.status === 'Delivered')
+      .reduce((sum, pkg: any) => sum + (pkg.price || 0), 0);
   }, [filteredPackages]);
 
   const toggleSelection = (pkgId: string) => {
@@ -886,6 +897,19 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
             )}
           </Text>
         </View>
+
+        <View style={styles.financeStatsRow}>
+          <View style={styles.financeStatBox}>
+            <Text style={styles.financeStatLabel}>Valeur Totale (Filtres)</Text>
+            <Text style={styles.financeStatValue}>{filteredTotalPrice.toFixed(2)} DH</Text>
+          </View>
+          <View style={styles.financeStatDivider} />
+          <View style={[styles.financeStatBox, { alignItems: 'flex-end' }]}>
+            <Text style={[styles.financeStatLabel, { color: '#047857' }]}>Montant Livré (Encaissé)</Text>
+            <Text style={[styles.financeStatValue, { color: '#059669' }]}>{filteredDeliveredPrice.toFixed(2)} DH</Text>
+          </View>
+        </View>
+
         <View style={styles.bulkControls}>
           {selectedPackageIds.size > 0 && (
             <>
@@ -1486,6 +1510,35 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  financeStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  financeStatBox: {
+    flex: 1,
+  },
+  financeStatLabel: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  financeStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  financeStatDivider: {
+    width: 1,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 12,
   },
   bulkControls: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   bulkToggle: {
