@@ -220,6 +220,10 @@ Notes     : ${pkg.description || 'Aucune'}
           data={sortedPackages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          removeClippedSubviews={true}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={5}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.packageRow}

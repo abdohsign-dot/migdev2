@@ -27,7 +27,8 @@
     },
     "plugins": [
       "expo-dev-client",
-      "expo-camera"
+      "expo-camera",
+      "expo-secure-store"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

@@ -15,6 +15,7 @@ import {
   Linking,
 } from 'react-native';
 import Share from 'react-native-share';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../../hooks/useLocalDatabase';
@@ -540,12 +541,14 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     
     // Validate QR code data - reject URLs and invalid formats
     if (!data || data.trim().length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       Alert.alert('Format invalide', 'Le QR code scanné est vide.');
       return;
     }
     
     // Reject URLs and web links
     if (data.startsWith('http://') || data.startsWith('https://') || data.startsWith('www.')) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       Alert.alert('Format invalide', 'Les liens web ne sont pas supportés.');
       return;
     }
@@ -560,6 +563,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
         searchRef = String(parsed.ref_number || parsed.ref);
         packageData = parsed;
       } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         Alert.alert('Format invalide', 'Le QR code scanné n\'est pas un colis valide.');
         return;
       }
@@ -572,6 +576,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       
       // Validate reference number format (basic validation)
       if (!/^PKG-\d+$/.test(searchRef) && !/^\d+$/.test(searchRef)) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         Alert.alert('Format invalide', 'Le QR code doit contenir un numéro de référence valide (ex: PKG-123456).');
         return;
       }
@@ -584,9 +589,11 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     
     if (foundPkg) {
       // Package exists - show details
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       openPackageDetails(foundPkg);
     } else if (packageData) {
       // Package doesn't exist but we have JSON data - navigate to AddPackageScreen with pre-filled data
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       Alert.alert(
         'Nouveau Colis Détecté',
         'Ce colis n\'existe pas dans la base de données. Voulez-vous le créer avec les données scannées ?',
@@ -604,6 +611,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
         ]
       );
     } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       Alert.alert('Introuvable', 'Ce colis n\'existe pas.');
     }
   };
@@ -1003,6 +1011,10 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
         contentContainerStyle={styles.tableContent}
         ListHeaderComponent={renderTableHeader}
         renderItem={renderTableRow}
+        removeClippedSubviews={true}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={5}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }

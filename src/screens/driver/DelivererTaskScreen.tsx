@@ -12,6 +12,7 @@ import { sendAutoReportToAdmin } from '../../utils/offlineExport';
 import { getStatusColor } from '../../utils/statusColors';
 import { formatPhoneForWhatsApp } from '../../utils/phoneUtils';
 import ScannerModal from '../../components/ScannerModal';
+import * as Haptics from 'expo-haptics';
 import { getPackageDisplayRef } from '../../utils/packageUtils';
 import { formatDate } from '../../utils/dateFormatter';
 import useDriverStore from '../../store/useDriverStore';
@@ -464,12 +465,14 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
     // Validate QR code data - reject URLs and invalid formats
     if (!data || data.trim().length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       Alert.alert('Format invalide', 'Le QR code scanné est vide.');
       return;
     }
 
     // Reject URLs and web links
     if (data.startsWith('http://') || data.startsWith('https://') || data.startsWith('www.')) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       Alert.alert('Format invalide', 'Les liens web ne sont pas supportés.');
       return;
     }
@@ -552,6 +555,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
       // Validate reference number format (basic validation)
       if (!/^PKG-\d+$/.test(searchRef) && !/^\d+$/.test(searchRef)) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         Alert.alert('Format invalide', 'Le QR code doit contenir un numéro de référence valide (ex: PKG-123456).');
         return;
       }
@@ -595,12 +599,14 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
         // Update local state immediately for instant UI update
         updatePackageInState(updatedPkg);
         
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setExpandedPackageId(foundPkg.id);
         ToastAndroid.show('Colis mis à jour avec données QR', ToastAndroid.SHORT);
         return;
       }
 
       // No QR payload or package exists and has valid data, just show it
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setExpandedPackageId(foundPkg.id);
       ToastAndroid.show('Colis trouvé', ToastAndroid.SHORT);
       return;
@@ -609,6 +615,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     // Offline fallback (Firestore down / package not yet assigned locally):
     // Create a local draft from QR payload so driver can prefill + accept.
     if (!driverId) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       Alert.alert('Erreur', 'Driver ID manquant.');
       return;
     }
@@ -665,6 +672,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     console.log('📱 Package added to UI state, packages count:', localPackages.length + 1);
 
     setExpandedPackageId(draftPkg.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     ToastAndroid.show('QR reconnu: mission créée localement', ToastAndroid.SHORT);
     Alert.alert(
       'Mission prête',
