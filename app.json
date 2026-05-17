@@ -28,7 +28,8 @@
     "plugins": [
       "expo-dev-client",
       "expo-camera",
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withSplashFill"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
