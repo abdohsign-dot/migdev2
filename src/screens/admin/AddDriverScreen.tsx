@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, ToastAndroid } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AddDriverScreenProps } from '../types/navigation';
-import { DRIVER_CREDENTIALS, getActiveDrivers, generateAdminDriverId, addNewDriverCredential, storeDriverPin } from '../config/credentials';
-import useAuthStore from '../store/useAuthStore';
+import { AddDriverScreenProps } from '../../types/navigation';
+import { DRIVER_CREDENTIALS, getActiveDrivers, generateAdminDriverId, addNewDriverCredential, storeDriverPin } from '../../config/credentials';
+import useAuthStore from '../../store/useAuthStore';
 
 const VEHICLE_TYPES = ['Moto', 'Voiture', 'Camionnette'];
 
@@ -84,7 +84,7 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
       
       // Store locally and queue sync
       try {
-        const { storeDriverLocally, addToSyncQueue, processSyncQueue, syncDriversFromSupabase } = await import('../utils/supabaseSync');
+        const { storeDriverLocally, addToSyncQueue, processSyncQueue, syncDriversFromSupabase } = await import('../../utils/supabaseSync');
         const driverObj = {
           id: driverId,
           custom_id: driverId, // Use generated ID as custom_id

@@ -9,8 +9,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ToastAndroid, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { setSecureItem, getSecureItem, SECURE_KEYS } from '../utils/secureStorage';
-import { DRIVER_CREDENTIALS, DriverCredential } from '../config/credentials';
+import { setSecureItem, getSecureItem, SECURE_KEYS } from '../../utils/secureStorage';
+import { DRIVER_CREDENTIALS, DriverCredential } from '../../config/credentials';
 
 interface DriverCredentialsScreenProps {
   navigation: any;

@@ -1,28 +1,38 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-// Screen parameters
-export type RootStackParamList = {
+export type AuthStackParamList = {
   Login: undefined;
+};
+
+export type AdminStackParamList = {
   AdminDashboard: undefined;
   DriverList: { mode?: 'assign'; packageId?: string; onAssign?: (driverId: string) => void } | undefined;
   AddDriver: undefined;
   ModifyDriver: { driver: any };
-  DelivererTask: undefined;
   AddPackage: { scannedData?: any } | undefined;
   DriverCredentials: undefined;
-  PackageList: undefined;
   AdminPackageList: { archivedOnly?: boolean } | undefined;
   ChangeAdminPin: undefined;
 };
 
-// Screen props types using React Navigation's NativeStackScreenProps
-export type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
-export type AdminDashboardScreenProps = NativeStackScreenProps<RootStackParamList, 'AdminDashboard'>;
-export type AdminPackageListScreenProps = NativeStackScreenProps<RootStackParamList, 'AdminPackageList'>;
-export type DriverListScreenProps = NativeStackScreenProps<RootStackParamList, 'DriverList'>;
-export type AddDriverScreenProps = NativeStackScreenProps<RootStackParamList, 'AddDriver'>;
-export type ModifyDriverScreenProps = NativeStackScreenProps<RootStackParamList, 'ModifyDriver'>;
-export type DelivererTaskScreenProps = NativeStackScreenProps<RootStackParamList, 'DelivererTask'>;
-export type AddPackageScreenProps = NativeStackScreenProps<RootStackParamList, 'AddPackage'>;
-export type DriverCredentialsScreenProps = NativeStackScreenProps<RootStackParamList, 'DriverCredentials'>;
-export type ChangeAdminPinScreenProps = NativeStackScreenProps<RootStackParamList, 'ChangeAdminPin'>;
+export type DriverStackParamList = {
+  DelivererTask: undefined;
+  PackageList: undefined;
+};
+
+// Auth Screen Props
+export type LoginScreenProps = NativeStackScreenProps<AuthStackParamList, 'Login'>;
+
+// Admin Screen Props
+export type AdminDashboardScreenProps = NativeStackScreenProps<AdminStackParamList, 'AdminDashboard'>;
+export type AdminPackageListScreenProps = NativeStackScreenProps<AdminStackParamList, 'AdminPackageList'>;
+export type DriverListScreenProps = NativeStackScreenProps<AdminStackParamList, 'DriverList'>;
+export type AddDriverScreenProps = NativeStackScreenProps<AdminStackParamList, 'AddDriver'>;
+export type ModifyDriverScreenProps = NativeStackScreenProps<AdminStackParamList, 'ModifyDriver'>;
+export type AddPackageScreenProps = NativeStackScreenProps<AdminStackParamList, 'AddPackage'>;
+export type DriverCredentialsScreenProps = NativeStackScreenProps<AdminStackParamList, 'DriverCredentials'>;
+export type ChangeAdminPinScreenProps = NativeStackScreenProps<AdminStackParamList, 'ChangeAdminPin'>;
+
+// Driver Screen Props
+export type DelivererTaskScreenProps = NativeStackScreenProps<DriverStackParamList, 'DelivererTask'>;
+export type PackageListScreenProps = NativeStackScreenProps<DriverStackParamList, 'PackageList'>;

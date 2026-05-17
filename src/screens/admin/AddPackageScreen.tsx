@@ -2,10 +2,10 @@ import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Switch, ScrollView, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { AddPackageScreenProps } from '../types/navigation';
-import { validatePackageData, validateNumber, validateCoordinates, sanitizeInput } from '../utils/inputValidation';
+import { AddPackageScreenProps } from '../../types/navigation';
+import { validatePackageData, validateNumber, validateCoordinates, sanitizeInput } from '../../utils/inputValidation';
 import { useRoute } from '@react-navigation/native';
-import { formatDate as formatDateUtil, formatDateISO, parseDateString } from '../utils/dateFormatter';
+import { formatDate as formatDateUtil, formatDateISO, parseDateString } from '../../utils/dateFormatter';
 
 export default function AddPackageScreen({ navigation }: AddPackageScreenProps) {
   const route = useRoute();
@@ -143,7 +143,7 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
     setLoading(true);
     try {
       // Import the local database functions
-      const { createPackage } = await import('../utils/localDatabase');
+      const { createPackage } = await import('../../utils/localDatabase');
 
       const timestamp = new Date().toISOString();
 

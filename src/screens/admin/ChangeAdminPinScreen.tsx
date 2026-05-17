@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { changeAdminPin } from '../utils/adminPin';
+import { changeAdminPin } from '../../utils/adminPin';
 
 interface ChangeAdminPinScreenProps {
   navigation: any;

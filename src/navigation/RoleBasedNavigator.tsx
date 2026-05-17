@@ -3,25 +3,15 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import useAuthStore from '../store/useAuthStore';
 
-import LoginScreen from '../screens/LoginScreen';
-import AdminDashboardScreen from '../screens/AdminDashboardScreen';
-import DelivererTaskScreen from '../screens/DelivererTaskScreen';
-import AddPackageScreen from '../screens/AddPackageScreen';
-import DriverListScreen from '../screens/DriverListScreen';
-import AddDriverScreen from '../screens/AddDriverScreen';
-import ModifyDriverScreen from '../screens/ModifyDriverScreen';
-import DriverCredentialsScreen from '../screens/DriverCredentialsScreen';
-import PackageListScreen from '../screens/PackageListScreen';
-import AdminPackageListScreen from '../screens/AdminPackageListScreen';
-import ChangeAdminPinScreen from '../screens/ChangeAdminPinScreen';
+import AdminNavigator from './AdminNavigator';
+import DriverNavigator from './DriverNavigator';
+import LoginScreen from '../screens/auth/LoginScreen';
+import { AuthStackParamList } from '../types/navigation';
 
-const Stack = createNativeStackNavigator();
+const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 
-/**
- * Navigation Error Boundary
- * Catches errors during navigation and screen rendering
- */
 class NavigationErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
     super(props);
@@ -56,16 +46,13 @@ class NavigationErrorBoundary extends Component<{ children: ReactNode }, { hasEr
         </SafeAreaView>
       );
     }
-
     return this.props.children;
   }
 }
 
-/**
- * Main App Navigator
- * Wrapped with error boundary for robust error handling
- */
-export default function AppNavigator() {
+export default function RoleBasedNavigator() {
+  const { isAuthenticated, userRole } = useAuthStore();
+
   return (
     <NavigationErrorBoundary>
       <NavigationContainer
@@ -75,19 +62,19 @@ export default function AppNavigator() {
           </View>
         }
       >
-        <Stack.Navigator id="RootStack" initialRouteName="Login">
-          <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="DriverList" component={DriverListScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="AddDriver" component={AddDriverScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="ModifyDriver" component={ModifyDriverScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="DelivererTask" component={DelivererTaskScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="AddPackage" component={AddPackageScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="DriverCredentials" component={DriverCredentialsScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="PackageList" component={PackageListScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="AdminPackageList" component={AdminPackageListScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="ChangeAdminPin" component={ChangeAdminPinScreen} options={{ headerShown: false }} />
-        </Stack.Navigator>
+        {!isAuthenticated ? (
+          <AuthStack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
+            <AuthStack.Screen name="Login" component={LoginScreen} />
+          </AuthStack.Navigator>
+        ) : userRole === 'admin' ? (
+          <AdminNavigator />
+        ) : userRole === 'deliverer' ? (
+          <DriverNavigator />
+        ) : (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Unknown Role</Text>
+          </View>
+        )}
       </NavigationContainer>
     </NavigationErrorBoundary>
   );

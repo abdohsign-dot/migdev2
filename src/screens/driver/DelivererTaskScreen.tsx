@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ToastAndroid, Linking, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import PackageCard from '../components/PackageCard';
-import useAuthStore from '../store/useAuthStore';
-import { DelivererTaskScreenProps } from '../types/navigation';
-import { useLocalDatabase } from '../hooks/useLocalDatabase';
-import { updatePackage, upsertPackageLocally } from '../utils/localDatabase';
-import { showExportOptions } from '../utils/offlineExport';
-import { sendAutoReportToAdmin } from '../utils/offlineExport';
-import { getStatusColor } from '../utils/statusColors';
-import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
-import ScannerModal from '../components/ScannerModal';
-import { getPackageDisplayRef } from '../utils/packageUtils';
-import { formatDate } from '../utils/dateFormatter';
+import PackageCard from '../../components/PackageCard';
+import useAuthStore from '../../store/useAuthStore';
+import { DelivererTaskScreenProps } from '../../types/navigation';
+import { useLocalDatabase } from '../../hooks/useLocalDatabase';
+import { updatePackage, upsertPackageLocally } from '../../utils/localDatabase';
+import { showExportOptions } from '../../utils/offlineExport';
+import { sendAutoReportToAdmin } from '../../utils/offlineExport';
+import { getStatusColor } from '../../utils/statusColors';
+import { formatPhoneForWhatsApp } from '../../utils/phoneUtils';
+import ScannerModal from '../../components/ScannerModal';
+import { getPackageDisplayRef } from '../../utils/packageUtils';
+import { formatDate } from '../../utils/dateFormatter';
 import { 
   Responsive, 
   deviceType, 
@@ -26,7 +26,7 @@ import {
   responsiveFontSize,
   responsivePadding,
   responsiveSize 
-} from '../utils/responsive';
+} from '../../utils/responsive';
 
 export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenProps) {
   const { driverId, logout } = useAuthStore();
@@ -307,7 +307,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
   const handleLogout = () => {
     logout();
-    navigation.replace('Login');
+    // Stack will automatically unmount and switch to AuthStack
   };
 
   // Auto-report trigger when connection is lost

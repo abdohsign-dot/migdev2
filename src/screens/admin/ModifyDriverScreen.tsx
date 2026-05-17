@@ -5,9 +5,9 @@ import {
   ActivityIndicator, ToastAndroid 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ModifyDriverScreenProps } from '../types/navigation';
-import { isPreStoredDriverId, activateDriverId } from '../config/credentials';
-import useAuthStore from '../store/useAuthStore';
+import { ModifyDriverScreenProps } from '../../types/navigation';
+import { isPreStoredDriverId, activateDriverId } from '../../config/credentials';
+import useAuthStore from '../../store/useAuthStore';
 
 const VEHICLE_TYPES = ['Moto', 'Voiture', 'Camionnette'];
 
@@ -88,7 +88,7 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
 
       // 1. Always update locally
       try {
-        const { storeDriverLocally, addToSyncQueue, processSyncQueue, syncDriversFromSupabase } = await import('../utils/supabaseSync');
+        const { storeDriverLocally, addToSyncQueue, processSyncQueue, syncDriversFromSupabase } = await import('../../utils/supabaseSync');
         await storeDriverLocally(updatedDriver);
         
         // 2. Queue for Supabase sync

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Button, LogBox, StatusBar } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import AppNavigator from './src/navigation/AppNavigator';
+import RoleBasedNavigator from './src/navigation/RoleBasedNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
 // AppCheck removed - Firebase App Check no longer needed
 
@@ -132,7 +132,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <ErrorBoundary>
-        <AppNavigator />
+        <RoleBasedNavigator />
       </ErrorBoundary>
     </SafeAreaProvider>
   );

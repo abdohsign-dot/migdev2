@@ -17,10 +17,10 @@ import {
 import Share from 'react-native-share';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { useLocalDatabase } from '../hooks/useLocalDatabase';
-import { AdminPackageListScreenProps } from '../types/navigation';
-import ScannerModal from '../components/ScannerModal';
-import { formatDateTime as formatDateTimeUtil } from '../utils/dateFormatter';
+import { useLocalDatabase } from '../../hooks/useLocalDatabase';
+import { AdminPackageListScreenProps } from '../../types/navigation';
+import ScannerModal from '../../components/ScannerModal';
+import { formatDateTime as formatDateTimeUtil } from '../../utils/dateFormatter';
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
@@ -282,7 +282,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       Alert.alert('Succès', `${packageIds.length} colis assignés!`);
 
       // ── Step 3: sync to Supabase in background (fire-and-forget) ─────────
-      const { processSyncQueue } = require('../utils/localDatabase');
+      const { processSyncQueue } = require('../../utils/localDatabase');
       processSyncQueue().catch((e: any) =>
         console.warn('Background assign sync failed (will retry):', e)
       );
@@ -322,7 +322,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
     setBulkDeassigning(true);
     try {
-      const { getPackagesLocally, upsertPackageLocally, addToSyncQueue, processSyncQueue } = require('../utils/localDatabase');
+      const { getPackagesLocally, upsertPackageLocally, addToSyncQueue, processSyncQueue } = require('../../utils/localDatabase');
 
       const ids = Array.from(selectedIdsToDeassign);
       const timestamp = new Date().toISOString();

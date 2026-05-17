@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, ToastAndroid, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import useAuthStore from '../store/useAuthStore';
-import { LoginScreenProps } from '../types/navigation';
+import useAuthStore from '../../store/useAuthStore';
+import { LoginScreenProps } from '../../types/navigation';
 
-import { verifyAdminPin } from '../utils/adminPin';
-import { getDriverById, verifyDriverPin, isPreStoredDriverId } from '../config/credentials';
-import { getDriverById as getDriverByIdFromSupabase } from '../utils/supabaseDatabase';
+import { verifyAdminPin } from '../../utils/adminPin';
+import { getDriverById, verifyDriverPin, isPreStoredDriverId } from '../../config/credentials';
+import { getDriverById as getDriverByIdFromSupabase } from '../../utils/supabaseDatabase';
 import { 
   Responsive, 
   deviceType, 
@@ -20,7 +20,7 @@ import {
   responsiveFontSize,
   responsivePadding,
   responsiveSize 
-} from '../utils/responsive';
+} from '../../utils/responsive';
 
 export default function LoginScreen({ navigation }: LoginScreenProps) {
   const [driverId, setDriverId] = useState('');
@@ -84,7 +84,6 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           
           if (isValid && localDriver.is_active) {
             loginAsDriver(trimmedId);
-            navigation.replace('DelivererTask');
             setLoading(false);
             return;
           } else if (!localDriver.is_active) {
@@ -217,7 +216,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
         setAdminPin('');
         setAdminPinError('');
         unlockAdmin();
-        navigation.replace('AdminDashboard');
+        // Stack will automatically unmount and switch to AdminStack
       } else {
         console.log('❌ Admin PIN incorrect');
         setAdminPinError('Code PIN incorrect');

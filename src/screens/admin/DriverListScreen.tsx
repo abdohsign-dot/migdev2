@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { getActiveDrivers, DRIVER_CREDENTIALS } from '../config/credentials';
-import { DriverListScreenProps } from '../types/navigation';
+import { getActiveDrivers, DRIVER_CREDENTIALS } from '../../config/credentials';
+import { DriverListScreenProps } from '../../types/navigation';
 import { 
   SPACING, 
   FONTS, 
   BORDER_RADIUS,
   responsiveSize 
-} from '../utils/responsive';
+} from '../../utils/responsive';
 
 export default function DriverListScreen({ navigation, route }: DriverListScreenProps) {
   const [drivers, setDrivers] = useState<any[]>([]);
@@ -70,14 +70,14 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
     const loadAllDrivers = async () => {
       try {
         // 1. Try to load drivers from local storage first
-        const { getDriversLocally } = await import('../utils/localDatabase');
+        const { getDriversLocally } = await import('../../utils/localDatabase');
         const localDrivers = await getDriversLocally();
         
         const uniqueLocalDrivers = buildDriverList(localDrivers);
         
         // 4. Try Supabase for real-time updates
         try {
-          const { listenToActiveDrivers, unsubscribe } = require('../utils/supabaseRealtime');
+          const { listenToActiveDrivers, unsubscribe } = require('../../utils/supabaseRealtime');
           
           console.log('🔍 Attempting to connect to Supabase real-time...');
           
@@ -127,7 +127,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
     setLoading(true);
     try {
       // Reload from local storage
-      const { getDriversLocally } = await import('../utils/localDatabase');
+      const { getDriversLocally } = await import('../../utils/localDatabase');
       const localDrivers = await getDriversLocally();
       
       const uniqueLocalDrivers = buildDriverList(localDrivers);
@@ -165,11 +165,11 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       const refreshOnFocus = async () => {
         try {
           // 1. Pull latest drivers from Supabase into local storage
-          const { syncDriversFromSupabase } = await import('../utils/supabaseSync');
+          const { syncDriversFromSupabase } = await import('../../utils/supabaseSync');
           await syncDriversFromSupabase();
 
           // 2. Read the now-updated local storage
-          const { getDriversLocally } = await import('../utils/localDatabase');
+          const { getDriversLocally } = await import('../../utils/localDatabase');
           const localDrivers = await getDriversLocally();
           const uniqueDrivers = buildDriverList(localDrivers);
           if (__DEV__) console.log('🔄 Auto-refresh on focus: loaded', uniqueDrivers.length, 'drivers');
@@ -191,7 +191,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
     // Check if driver has assigned packages
     let assignedCount = 0;
     try {
-      const { getPackagesLocally } = await import('../utils/localDatabase');
+      const { getPackagesLocally } = await import('../../utils/localDatabase');
       const allPackages = await getPackagesLocally(undefined, true);
       assignedCount = allPackages.filter(p => p.assigned_to === driver.id).length;
     } catch (e) {
@@ -230,7 +230,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       // 1. Find and unassign packages assigned to this driver
       let unassignedCount = 0;
       try {
-        const { getPackagesLocally, updatePackage } = await import('../utils/localDatabase');
+        const { getPackagesLocally, updatePackage } = await import('../../utils/localDatabase');
         const allPackages = await getPackagesLocally(undefined, true);
         const assignedPackages = allPackages.filter(p => p.assigned_to === driver.id);
         
@@ -254,7 +254,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       
       // 2. DELETE from Supabase (RLS enforced)
       try {
-        const { deleteDriver } = require('../utils/supabaseDatabase');
+        const { deleteDriver } = require('../../utils/supabaseDatabase');
         await deleteDriver(driver.id);
         console.log('✅ Driver deleted from Supabase');
       } catch (supabaseError: any) {
@@ -264,7 +264,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       
       // 2. Remove from local storage
       try {
-        const { removeDriverLocally } = await import('../utils/localDatabase');
+        const { removeDriverLocally } = await import('../../utils/localDatabase');
         await removeDriverLocally(driver.id);
         console.log('✅ Driver removed from local storage');
       } catch (localError) {
@@ -273,7 +273,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       
       // 3. If it's a pre-stored driver, deactivate it
       if (driver.id.startsWith('DRV-')) {
-        const { deactivateDriverId } = await import('../config/credentials');
+        const { deactivateDriverId } = await import('../../config/credentials');
         deactivateDriverId(driver.id);
         console.log('✅ Pre-stored driver deactivated');
       }
@@ -281,7 +281,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       // 4. For admin-created drivers, also remove from credentials if present
       if (driver.id.startsWith('ADM-')) {
         try {
-          const { DRIVER_CREDENTIALS } = require('../config/credentials');
+          const { DRIVER_CREDENTIALS } = require('../../config/credentials');
           // Find and remove admin-created driver from credentials array
           const driverIndex = DRIVER_CREDENTIALS.findIndex((d: any) => d.id === driver.id);
           if (driverIndex !== -1) {
@@ -298,7 +298,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       
       // 6. Force reload from local storage to ensure consistency
       try {
-        const { getDriversLocally } = await import('../utils/localDatabase');
+        const { getDriversLocally } = await import('../../utils/localDatabase');
         const refreshedDrivers = await getDriversLocally();
         const finalDrivers = buildDriverList(refreshedDrivers).filter((d: any) => d.id !== driver.id);
         setDrivers(finalDrivers);
@@ -359,7 +359,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
 
 
   const activatePrestoredDriver = (driverId: string) => {
-    const { activateDriverId } = require('../config/credentials');
+    const { activateDriverId } = require('../../config/credentials');
     const success = activateDriverId(driverId);
     
     if (success) {

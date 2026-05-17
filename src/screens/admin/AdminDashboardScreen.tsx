@@ -9,10 +9,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
-import { useLocalDatabase } from '../hooks/useLocalDatabase';
-import useAuthStore from '../store/useAuthStore';
-import type { AdminDashboardScreenProps } from '../types/navigation';
-import type { Package, Driver } from '../types';
+import { useLocalDatabase } from '../../hooks/useLocalDatabase';
+import useAuthStore from '../../store/useAuthStore';
+import type { AdminDashboardScreenProps } from '../../types/navigation';
+import type { Package, Driver } from '../../types';
 import { 
   Responsive, 
   deviceType, 
@@ -26,7 +26,7 @@ import {
   responsiveFontSize,
   responsivePadding,
   responsiveSize 
-} from '../utils/responsive';
+} from '../../utils/responsive';
 
 const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation }) => {
   const { userRole, logout } = useAuthStore();
@@ -78,13 +78,12 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
             try {
               logout();
               console.log('✅ Logout function called');
-              navigation.replace('Login');
-              console.log('✅ Navigation to Login screen initiated');
+              // Stack will automatically unmount because isAuthenticated becomes false
             } catch (error) {
               console.error('❌ Error during admin logout:', error);
               // Try to navigate anyway
               try {
-                navigation.replace('Login');
+                // Stack will automatically unmount, nothing else needed
               } catch (navError) {
                 console.error('❌ Navigation also failed:', navError);
               }
