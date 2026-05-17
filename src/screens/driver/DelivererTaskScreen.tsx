@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ToastAndroid, Linking, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import PackageCard from '../../components/PackageCard';
@@ -72,6 +73,33 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
   // Hide completed tasks state
   const [hideCompletedTasks, setHideCompletedTasks] = useState(false);
+
+  const handleClearPackage = async (pkgId: string) => {
+    Alert.alert(
+      "Masquer la mission",
+      "Voulez-vous masquer ce colis de votre liste ? Cette action n'affecte pas le serveur ni l'administrateur.",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Masquer",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              if (driverId) {
+                const { deleteDriverPackageLocally } = require('../../utils/localDatabase');
+                await deleteDriverPackageLocally(pkgId, driverId);
+                await reloadLocalData();
+                ToastAndroid.show('Colis masqué de la liste', ToastAndroid.SHORT);
+              }
+            } catch (e) {
+              console.error('Failed to clear package locally:', e);
+              ToastAndroid.show('Erreur lors de la suppression locale', ToastAndroid.SHORT);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   // Debug: Log driver info and packages
   useEffect(() => {
@@ -768,17 +796,6 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
             <TouchableOpacity onPress={refresh} style={styles.refreshBtn} disabled={syncing}>
               <Text style={styles.refreshText}>{syncing ? '⟳' : '↻'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => setHideCompletedTasks(!hideCompletedTasks)} 
-              style={[
-                styles.clearBtn, 
-                hideCompletedTasks && styles.clearBtnActive
-              ]}
-            >
-              <Text style={styles.clearBtnText}>
-                {hideCompletedTasks ? '📋' : '🧹'}
-              </Text>
-            </TouchableOpacity>
             <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
               <Text style={styles.logoutText}>Déconnexion</Text>
             </TouchableOpacity>
@@ -1008,6 +1025,14 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
                           </TouchableOpacity>
                         </>
                       )}
+
+                      {/* Always show option to clear/hide this single task from list */}
+                      <TouchableOpacity 
+                        style={[styles.actionBtn, styles.hideTaskBtn]} 
+                        onPress={() => handleClearPackage(item.id)}
+                      >
+                        <Text style={styles.actionBtnText}>🧹 Effacer de la liste</Text>
+                      </TouchableOpacity>
                     </View>
                   </ScrollView>
                 </View>
@@ -1028,20 +1053,6 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
               {hideCompletedTasks ? visibleTotalPrice.toFixed(2) : totalPrice.toFixed(2)} DH
             </Text>
           </View>
-          
-          {hideCompletedTasks && completedTasksCount > 0 && (
-            <View style={styles.hiddenTasksInfo}>
-              <Text style={styles.hiddenTasksText}>
-                📋 {completedTasksCount} mission(s) terminée(s) masquée(s)
-              </Text>
-              <TouchableOpacity 
-                onPress={() => setHideCompletedTasks(false)}
-                style={styles.showTasksBtn}
-              >
-                <Text style={styles.showTasksBtnText}>Afficher</Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </View>
       )}
 
@@ -1428,6 +1439,9 @@ const styles = StyleSheet.create({
   },
   returnBtn: {
     backgroundColor: '#EF4444',
+  },
+  hideTaskBtn: {
+    backgroundColor: '#6B7280',
   },
   actionBtnText: {
     color: '#FFFFFF',

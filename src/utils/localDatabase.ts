@@ -401,6 +401,19 @@ export const deletePackageLocally = async (packageId: string): Promise<void> => 
   }
 };
 
+export const deleteDriverPackageLocally = async (packageId: string, driverId: string): Promise<void> => {
+  try {
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    if (storageDriverId) {
+      await removePackageFromStorage(packageId, storageDriverId);
+      console.log(`🗑️ Package ${packageId} removed only from driver ${driverId} partition`);
+    }
+  } catch (error) {
+    console.error('Error deleting package from driver partition:', error);
+    throw error;
+  }
+};
+
 export const getLastSyncTime = async (driverId?: string): Promise<string> => {
   try {
     const storageDriverId = await resolveDriverStorageId(driverId);
