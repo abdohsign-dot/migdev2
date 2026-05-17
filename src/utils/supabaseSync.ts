@@ -45,9 +45,21 @@ import {
   ConflictInfo,
 } from './conflictDetection';
 
+import {
+  getPackagesLocally,
+  storePackageLocally,
+  getDriversLocally,
+  storeDriverLocally
+} from './localDatabase';
+
+export {
+  getPackagesLocally,
+  storePackageLocally,
+  getDriversLocally,
+  storeDriverLocally
+};
+
 // Storage Keys (same as before for compatibility)
-const PACKAGES_KEY = '@delivry:packages';
-const DRIVERS_KEY = '@delivry:drivers';
 const SYNC_QUEUE_KEY = '@delivry:syncQueue';
 const LAST_SYNC_KEY = '@delivry:lastSync';
 const MIGRATION_COMPLETED_KEY = '@delivry:supabaseMigrationCompleted';
@@ -77,16 +89,7 @@ const resolveDriverStorageId = async (driverId?: string): Promise<string | undef
   return matched?.id;
 };
 
-// LOCAL STORAGE OPERATIONS (unchanged for compatibility)
-
-export const getPackagesLocally = async (): Promise<Package[]> => {
-  try {
-    const data = await AsyncStorage.getItem(PACKAGES_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
-};
+// LOCAL STORAGE OPERATIONS (delegated to localDatabase.ts via re-exports)
 
 // MIGRATION FUNCTIONS
 
@@ -361,133 +364,7 @@ export const migrateLocalDriversToSupabase = async (): Promise<void> => {
   }
 };
 
-export const storePackageLocally = async (pkg: Package): Promise<void> => {
-  try {
-    const packages = await getPackagesLocally();
-    const existingIndex = packages.findIndex(p => p.id === pkg.id);
-
-    // Normalize old timestamp fields to new standard
-    const normalized: any = { ...pkg };
-    if (normalized._lastModified && !normalized.updated_at) {
-      normalized.updated_at = normalized._lastModified;
-    }
-    if (normalized._last_modified && !normalized.updated_at) {
-      normalized.updated_at = normalized._last_modified;
-    }
-    if (normalized._version && !normalized.version) {
-      normalized.version = parseInt(normalized._version) || 1;
-    }
-    delete normalized._lastModified;
-    delete normalized._last_modified;
-    delete normalized._version;
-
-    // Ensure local model uses `undefined` for unassigned fields so driver
-    // filters like `pkg.assigned_to === assignedToUuid` behave correctly.
-    if (normalized.assigned_to === null) normalized.assigned_to = undefined;
-    if (normalized.assigned_at === null) normalized.assigned_at = undefined;
-
-    if (existingIndex >= 0) {
-      packages[existingIndex] = {
-        ...packages[existingIndex],
-        ...normalized,
-        updated_at: new Date().toISOString()
-      };
-    } else {
-      packages.push({
-        ...normalized,
-        created_at: normalized.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        version: normalized.version || 1
-      });
-    }
-
-    await AsyncStorage.setItem(PACKAGES_KEY, JSON.stringify(packages));
-  } catch (error) {
-    console.error('Error storing package locally:', error);
-    throw error;
-  }
-};
-
-export const getDriversLocally = async (): Promise<Driver[]> => {
-  try {
-    const data = await AsyncStorage.getItem(DRIVERS_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
-};
-
-// Shared write-queue for storeDriverLocally — prevents concurrent read-write races.
-// Both localDatabase.ts and supabaseSync.ts write to the same AsyncStorage key,
-// so we import and reuse localDatabase's queue via the shared storeDriverLocally export.
-// This version is kept for callers within supabaseSync that need the _last_modified normalization.
-let _syncDriverWriteQueue: Promise<void> = Promise.resolve();
-
-export const storeDriverLocally = async (driver: Driver): Promise<void> => {
-  _syncDriverWriteQueue = _syncDriverWriteQueue.then(async () => {
-    try {
-      const drivers = await getDriversLocally();
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-      const existingIndex = drivers.findIndex(d =>
-        d.id === driver.id ||
-        (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
-        (d.id && driver.custom_id && d.id === driver.custom_id) ||
-        (d.custom_id && driver.id && d.custom_id === driver.id)
-      );
-
-      // Normalize old timestamp/version fields from DB column names to JS model names
-      const normalized: any = { ...driver };
-      if (normalized._lastModified && !normalized.updated_at) {
-        normalized.updated_at = normalized._lastModified;
-      }
-      if (normalized._last_modified && !normalized.updated_at) {
-        normalized.updated_at = normalized._last_modified;
-      }
-      if (normalized._version && !normalized.version) {
-        normalized.version = parseInt(normalized._version) || 1;
-      }
-      delete normalized._lastModified;
-      delete normalized._last_modified;
-      delete normalized._version;
-
-      if (existingIndex >= 0) {
-        const existingId = drivers[existingIndex].id;
-        const incomingId = normalized.id;
-        const shouldUpgradeId = incomingId && uuidRegex.test(incomingId) && !uuidRegex.test(existingId);
-
-        drivers[existingIndex] = {
-          ...drivers[existingIndex],
-          ...normalized,
-          id: shouldUpgradeId ? incomingId : (existingId || incomingId),
-          updated_at: new Date().toISOString(),
-        };
-      } else {
-        drivers.push({
-          ...normalized,
-          created_at: normalized.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          version: normalized.version || 1,
-        });
-      }
-
-      // Safety net: collapse any residual duplicates by custom_id before writing
-      const seen = new Set<string>();
-      const deduped = drivers.filter(d => {
-        const key = d.custom_id || d.id;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-
-      await AsyncStorage.setItem(DRIVERS_KEY, JSON.stringify(deduped));
-    } catch (error) {
-      console.error('Error storing driver locally:', error);
-      throw error;
-    }
-  });
-  return _syncDriverWriteQueue;
-};
+// Removed stale local definitions in favor of localDatabase.ts re-exports
 
 // SYNC OPERATIONS
 
@@ -590,9 +467,28 @@ export const updateLastSyncTime = async (driverId?: string): Promise<void> => {
  */
 export const syncPackagesFromSupabase = async (driverId?: string): Promise<void> => {
   try {
-    const packages = driverId 
-      ? await getPackagesByDriver(driverId)
-      : await getPackages();
+    // Always download packages using service role to bypass RLS policies
+    const allPackages = await getPackagesServiceRole();
+    let packages = allPackages;
+
+    if (driverId) {
+      // Resolve driver ID (could be custom_id or UUID) to UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const isUuid = uuidRegex.test(driverId);
+      let targetUuid = driverId;
+
+      if (!isUuid) {
+        const drivers = await getDriversServiceRole();
+        const matched = drivers.find(d => d.custom_id === driverId || d.id === driverId);
+        if (!matched) {
+          console.log(`ℹ️ Driver ${driverId} not found in Supabase drivers list during sync`);
+          return;
+        }
+        targetUuid = matched.id;
+      }
+
+      packages = allPackages.filter(p => p.assigned_to === targetUuid);
+    }
 
     // Store all packages locally
     for (const pkg of packages) {
@@ -624,7 +520,7 @@ export const getPackagesByDriver = async (driverId: string): Promise<Package[]> 
  */
 export const syncDriversFromSupabase = async (): Promise<void> => {
   try {
-    const drivers = await getDrivers();
+    const drivers = await getDriversServiceRole();
 
     // Store all drivers locally
     for (const driver of drivers) {

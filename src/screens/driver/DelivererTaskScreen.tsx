@@ -162,6 +162,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
               await updatePackageStatus(pkgId, 'In Transit', {
                 accepted_at: now,
+                assigned_to: driverId || undefined,
               });
 
               updateMissionStatus(

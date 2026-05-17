@@ -269,34 +269,49 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
       const drivers = await getDriversLocally();
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+      // Normalize old timestamp/version fields from DB column names to JS model names
+      const normalized: any = { ...driver };
+      if (normalized._lastModified && !normalized.updated_at) {
+        normalized.updated_at = normalized._lastModified;
+      }
+      if (normalized._last_modified && !normalized.updated_at) {
+        normalized.updated_at = normalized._last_modified;
+      }
+      if (normalized._version && !normalized.version) {
+        normalized.version = parseInt(normalized._version) || 1;
+      }
+      delete normalized._lastModified;
+      delete normalized._last_modified;
+      delete normalized._version;
+
       // Match by id, custom_id cross-match (handles DRV-XXXXXX ↔ UUID bridge)
       const existingIndex = drivers.findIndex(d =>
-        d.id === driver.id ||
-        (d.custom_id && driver.custom_id && d.custom_id === driver.custom_id) ||
-        (d.id && driver.custom_id && d.id === driver.custom_id) ||
-        (d.custom_id && driver.id && d.custom_id === driver.id)
+        d.id === normalized.id ||
+        (d.custom_id && normalized.custom_id && d.custom_id === normalized.custom_id) ||
+        (d.id && normalized.custom_id && d.id === normalized.custom_id) ||
+        (d.custom_id && normalized.id && d.custom_id === normalized.id)
       );
 
       // When the incoming record has a SB UUID, prefer it as the canonical id
       const existingId = existingIndex >= 0 ? drivers[existingIndex].id : null;
       const shouldUpgradeId =
-        driver.id &&
-        uuidRegex.test(driver.id) &&
+        normalized.id &&
+        uuidRegex.test(normalized.id) &&
         existingId != null &&
         !uuidRegex.test(existingId);
 
       if (existingIndex >= 0) {
         drivers[existingIndex] = {
           ...drivers[existingIndex],
-          ...driver,
-          id: shouldUpgradeId ? driver.id : (existingId || driver.id),
+          ...normalized,
+          id: shouldUpgradeId ? normalized.id : (existingId || normalized.id),
           updated_at: new Date().toISOString(),
-          version: (driver.version ?? 1) + 1,
+          version: (normalized.version ?? 1) + 1,
         };
       } else {
         drivers.push({
-          ...driver,
-          created_at: driver.created_at || new Date().toISOString(),
+          ...normalized,
+          created_at: normalized.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
           version: 1,
         });
@@ -313,7 +328,7 @@ export const storeDriverLocally = async (driver: Driver): Promise<void> => {
       });
 
       await AsyncStorage.setItem(ADMIN_DRIVERS_KEY, JSON.stringify(deduped));
-      if (__DEV__) console.log(`💾 Driver ${driver.id} stored locally`);
+      if (__DEV__) console.log(`💾 Driver ${normalized.id} stored locally`);
     } catch (error) {
       console.error('Error storing driver locally:', error);
       throw error;
@@ -378,7 +393,8 @@ export const upsertPackageLocally = async (pkg: Package): Promise<void> => {
 export const deletePackageLocally = async (packageId: string): Promise<void> => {
   try {
     await deletePackageFromAllPartitions(packageId);
-    console.log(`🗑️ Package ${packageId} deleted from local storage`);
+    await removeSensitiveDataSecurely(packageId);
+    console.log(`🗑️ Package ${packageId} deleted from local storage (sensitive data removed)`);
   } catch (error) {
     console.error('Error deleting package locally:', error);
     throw error;
@@ -803,5 +819,50 @@ export const getPackageStats = async (driverId?: string): Promise<{
       total: 0, pending: 0, assigned: 0,
       inTransit: 0, delivered: 0, returned: 0
     };
+  }
+};
+
+/**
+ * Robustly stores a package locally from sync, normalizes it, encrypts its sensitive data,
+ * and partitions it into the active admin/driver slots correctly.
+ */
+export const storePackageLocally = async (pkg: Package): Promise<void> => {
+  try {
+    // Normalize old timestamp/version fields from DB column names to JS model names
+    const normalized: any = { ...pkg };
+    if (normalized._lastModified && !normalized.updated_at) {
+      normalized.updated_at = normalized._lastModified;
+    }
+    if (normalized._last_modified && !normalized.updated_at) {
+      normalized.updated_at = normalized._last_modified;
+    }
+    if (normalized._version && !normalized.version) {
+      normalized.version = parseInt(normalized._version) || 1;
+    }
+    delete normalized._lastModified;
+    delete normalized._last_modified;
+    delete normalized._version;
+
+    // Ensure local model uses `undefined` for unassigned fields so driver
+    // filters like `pkg.assigned_to === assignedToUuid` behave correctly.
+    if (normalized.assigned_to === null) normalized.assigned_to = undefined;
+    if (normalized.assigned_at === null) normalized.assigned_at = undefined;
+
+    // Extract and encrypt sensitive data
+    const sensitive = extractSensitiveData(normalized);
+    const sanitized = removeSensitiveData(normalized) as Package;
+
+    // Store in partitions (both admin partition and driver partition if assigned)
+    await syncPackageToPartitions(sanitized);
+
+    // Store sensitive data securely
+    await storeSensitiveData(pkg.id, sensitive);
+
+    if (__DEV__) {
+      console.log(`💾 Package ${pkg.id} synced and stored locally (sensitive encrypted)`);
+    }
+  } catch (error) {
+    console.error('Error storing package locally:', error);
+    throw error;
   }
 };

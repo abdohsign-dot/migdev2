@@ -58,9 +58,20 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       await loadLocalData();
       await checkSyncQueue();
       setLoading(false);
+
+      // Trigger automatic background synchronization on mount to fetch assigned packages
+      try {
+        console.log('🔄 Triggering auto-sync on mount for driver:', driverId);
+        const { performFullSync } = require('../utils/supabaseSync');
+        await performFullSync(driverId);
+        // Reload local data once sync is completed successfully
+        await loadLocalData();
+      } catch (syncError) {
+        console.log('ℹ️ Auto-sync on mount skipped or failed (likely offline):', syncError);
+      }
     };
     init();
-  }, []);
+  }, [driverId, isAdmin]);
 
   // Real-time listener for package changes using Supabase
   useEffect(() => {
