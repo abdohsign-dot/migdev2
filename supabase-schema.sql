@@ -50,7 +50,8 @@ CREATE TABLE packages (
   _last_modified TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   _version TEXT DEFAULT '1.0',
   is_archived BOOLEAN DEFAULT false,
-  archived_at TIMESTAMP WITH TIME ZONE
+  archived_at TIMESTAMP WITH TIME ZONE,
+  statusHistory JSONB DEFAULT '[]'::jsonb NOT NULL
 );
 
 -- User profiles table (extends Supabase auth.users)
@@ -86,6 +87,7 @@ CREATE TABLE sync_metadata (
 CREATE INDEX idx_packages_status ON packages(status);
 CREATE INDEX idx_packages_assigned_to ON packages(assigned_to);
 CREATE INDEX idx_packages_ref_number ON packages(ref_number);
+CREATE INDEX idx_packages_statusHistory ON packages USING GIN (statusHistory);
 CREATE INDEX idx_drivers_is_active ON drivers(is_active);
 CREATE INDEX idx_drivers_phone ON drivers(phone);
 CREATE INDEX idx_sync_operations_synced ON sync_operations(synced);

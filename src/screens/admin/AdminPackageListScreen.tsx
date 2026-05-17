@@ -724,7 +724,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                 {filterDriverId === 'all'
                   ? 'Tous'
                   : (() => {
-                      const driver = drivers.find((d: any) => d.id === filterDriverId);
+                      const driver = adminDrivers.find((d: any) => d.id === filterDriverId);
                       return driver ? driver.name : '—';
                     })()}
               </Text>
@@ -839,7 +839,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                 <Text style={styles.driverName}>Tous</Text>
               </TouchableOpacity>
 
-              {drivers.map((driver: any) => (
+              {adminDrivers.map((driver: any) => (
                 <TouchableOpacity
                   key={driver.id}
                   style={[
@@ -903,7 +903,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                     <TouchableOpacity
                       style={styles.bulkAssignBtn}
                       onPress={() => { setBulkAssigning(false); setBulkAssignModalVisible(true); }}
-                      disabled={!drivers.length}
+                      disabled={!adminDrivers.length}
                     >
                       <Text style={styles.bulkAssignText}>Assigner</Text>
                     </TouchableOpacity>
@@ -995,7 +995,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Assigner {selectedPackageIds.size} colis</Text>
             <ScrollView style={styles.driverList}>
-{drivers.map((driver: any) => (
+{adminDrivers.map((driver: any) => (
                 <TouchableOpacity
                   key={driver.id}
                   style={[
@@ -1046,7 +1046,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
             <ScrollView style={styles.driverList}>
               {Array.from(selectedPackageIds).map((pkgId: string) => {
-                const pkg = packages.find((p: any) => p.id === pkgId);
+                const pkg = adminPackages.find((p: any) => p.id === pkgId);
                 const checked = selectedIdsToDeassign.has(pkgId);
 
                 return (
@@ -1134,7 +1134,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                   <Text style={styles.detailLine}><Text style={styles.detailKey}>Assigné à:</Text> {(() => {
                     const assignedId = selectedPackageForDetails.assigned_to;
                     if (!assignedId) return 'N/A';
-                    const driver = drivers.find((d: any) => d.id === assignedId);
+                    const driver = adminDrivers.find((d: any) => d.id === assignedId);
                     return driver ? `${driver.name} (${driver.custom_id || driver.id})` : assignedId;
                   })()}</Text>
 

@@ -26,6 +26,7 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
   const { packages: localPackages = [], drivers: localDrivers = [], loading: localLoading = false, syncing = false, refresh, assignPackageToDriver } = useLocalDatabase({ isAdmin: true });
   const adminPackages = useAdminStore((state) => state.packages);
   const adminDrivers = useAdminStore((state) => state.drivers);
+  const adminLoading = useAdminStore((state) => state.loading);
   const setAdminPackages = useAdminStore((state) => state.setPackages);
   const setAdminDrivers = useAdminStore((state) => state.setDrivers);
   const setAdminLoading = useAdminStore((state) => state.setLoading);

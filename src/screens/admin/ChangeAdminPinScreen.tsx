@@ -257,6 +257,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  syncInfo: {
+    backgroundColor: '#EFF6FF',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    alignItems: 'center',
+  },
+  syncInfoText: {
+    fontSize: 13,
+    color: '#1E40AF',
+    fontWeight: '600',
+  },
   tipsBox: {
     backgroundColor: '#FFFBEB',
     padding: 16,

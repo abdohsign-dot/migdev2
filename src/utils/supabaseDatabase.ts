@@ -177,6 +177,7 @@ export const createPackageServiceRole = async (packageData: Omit<Package, 'id' |
     delete normalized._version;
     delete normalized.version;     // JS model field — DB column is _version (TEXT)
     delete normalized.updated_at;  // JS model field — DB column is _last_modified
+    delete normalized.statusHistory; // Temporarily exclude due to Supabase schema cache issue
 
     const { data, error } = await db
       .from('packages')
@@ -239,6 +240,7 @@ export const upsertPackageServiceRoleById = async (
     delete normalized._version;
     delete normalized.version;     // JS model field — DB column is _version (TEXT)
     delete normalized.updated_at;  // JS model field — DB column is _last_modified
+    delete normalized.statusHistory; // Temporarily exclude due to Supabase schema cache issue
 
     const { data, error } = await db
       .from('packages')
@@ -313,6 +315,7 @@ export const updatePackageServiceRole = async (
     delete raw.updated_at;
     delete raw.version;
     delete raw._lastModified;
+    delete raw.statusHistory; // Temporarily exclude due to Supabase schema cache issue
 
     const normalized: any = raw;
 

@@ -51,13 +51,12 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const setAdminSyncing = useAdminStore((state) => state.setSyncing);
   const setAdminLastSync = useAdminStore((state) => state.setLastSync);
 
-  // Load data from local storage and sync from Firestore on mount
+  // Load data from local storage on mount
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       await loadLocalData();
       await checkSyncQueue();
-      // Initial sync now handled by Supabase-only sync flows (RLS)
       setLoading(false);
     };
     init();
@@ -213,12 +212,19 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   };
 
   /**
-   * Supabase sync is handled by supabaseSync utilities (processSyncQueue / performFullSync).
-   * Keeping this hook Firestore-free to avoid crashing when @react-native-firebase isn't installed.
+   * Sync with Supabase using performFullSync utility
    */
-  const syncWithFirestore = async () => {
-    // no-op (Firestore removed)
-    return;
+  const syncWithSupabase = async () => {
+    try {
+      const { performFullSync } = require('../utils/supabaseSync');
+      setSyncing(true);
+      await performFullSync(driverId);
+      setSyncing(false);
+    } catch (error) {
+      console.error('Error syncing with Supabase:', error);
+      setSyncing(false);
+      throw error;
+    }
   };
 
   /**
@@ -460,17 +466,17 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   }, [packages]);
 
   /**
-   * Manual refresh data (pull from Firestore) - only when explicitly requested
+   * Manual refresh data (pull from Supabase) - only when explicitly requested
    */
   const refresh = useCallback(async () => {
     console.log('🔄 Manual refresh requested');
-    await syncWithFirestore();
+    await syncWithSupabase();
     // Reload local data after sync to get updated drivers/packages
     await loadLocalData();
   }, [driverId, isAdmin]);
 
   /**
-   * Reload local data without syncing with Firestore
+   * Reload local data without syncing with Supabase
    */
   const reloadLocalData = useCallback(async () => {
     console.log('🔄 Reloading local data only');
