@@ -18,13 +18,27 @@ import Share from 'react-native-share';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../../hooks/useLocalDatabase';
+import useAdminStore from '../../store/useAdminStore';
 import { AdminPackageListScreenProps } from '../../types/navigation';
 import ScannerModal from '../../components/ScannerModal';
 import { formatDateTime as formatDateTimeUtil } from '../../utils/dateFormatter';
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   
-  const { packages, drivers, loading, refresh, archivePackages, unarchivePackages, assignPackageToDriver, deletePackages } = useLocalDatabase({ isAdmin: true });
+  const { packages: localPackages, drivers: localDrivers, loading: localLoading, refresh, archivePackages, unarchivePackages, assignPackageToDriver, deletePackages } = useLocalDatabase({ isAdmin: true });
+  const adminPackages = useAdminStore((state) => state.packages);
+  const adminDrivers = useAdminStore((state) => state.drivers);
+  const adminLoading = useAdminStore((state) => state.loading);
+  const setAdminPackages = useAdminStore((state) => state.setPackages);
+  const setAdminDrivers = useAdminStore((state) => state.setDrivers);
+  const setAdminLoading = useAdminStore((state) => state.setLoading);
+
+  useEffect(() => {
+    setAdminPackages(localPackages);
+    setAdminDrivers(localDrivers);
+    setAdminLoading(localLoading);
+  }, [localPackages, localDrivers, localLoading, setAdminPackages, setAdminDrivers, setAdminLoading]);
+
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -125,7 +139,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   };
 
   // Filter packages
-  const filteredPackages = packages.filter((pkg: any) => {
+  const filteredPackages = adminPackages.filter((pkg: any) => {
     const isArchived = !!(pkg.is_archived || pkg.archived_at);
 
     // Archive mode first: only archived packages
@@ -297,8 +311,8 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   const selectedHasAssigned = useMemo(() => {
     const ids = Array.from(selectedPackageIds);
     if (ids.length === 0) return false;
-    return ids.some(id => packages.find((p: any) => p.id === id)?.status === 'Assigned');
-  }, [selectedPackageIds, packages]);
+    return ids.some(id => adminPackages.find((p: any) => p.id === id)?.status === 'Assigned');
+  }, [selectedPackageIds, adminPackages]);
 
   const openBulkDeassignModal = () => {
     setSelectedIdsToDeassign(new Set(selectedPackageIds));
@@ -553,7 +567,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     }
     
     // First, check if package exists
-    const foundPkg = packages.find(
+    const foundPkg = adminPackages.find(
       (p: any) => p.id === searchRef || p.ref_number.toLowerCase() === searchRef.toLowerCase()
     );
     
@@ -638,7 +652,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
     return colors[status] || '#6B7280';
   };
 
-  if (loading) {
+  if (adminLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContainer}>

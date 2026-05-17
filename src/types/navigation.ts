@@ -12,6 +12,7 @@ export type AdminStackParamList = {
   AddPackage: { scannedData?: any } | undefined;
   DriverCredentials: undefined;
   AdminPackageList: { archivedOnly?: boolean } | undefined;
+  PackageList: undefined;
   ChangeAdminPin: undefined;
 };
 

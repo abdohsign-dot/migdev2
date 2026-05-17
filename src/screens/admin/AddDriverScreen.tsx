@@ -4,10 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AddDriverScreenProps } from '../../types/navigation';
 import { DRIVER_CREDENTIALS, getActiveDrivers, generateAdminDriverId, addNewDriverCredential, storeDriverPin } from '../../config/credentials';
 import useAuthStore from '../../store/useAuthStore';
+import useAdminStore from '../../store/useAdminStore';
 
 const VEHICLE_TYPES = ['Moto', 'Voiture', 'Camionnette'];
 
 export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
+  const adminDrivers = useAdminStore((state) => state.drivers);
+  const setAdminDrivers = useAdminStore((state) => state.setDrivers);
+
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
@@ -116,6 +120,7 @@ export default function AddDriverScreen({ navigation }: AddDriverScreenProps) {
         processSyncQueue()
           .then(() => syncDriversFromSupabase())
           .catch((e: any) => console.warn('⚠️ Background sync after create failed:', e));
+        setAdminDrivers([...adminDrivers, driverObj]);
       } catch (localError) {
         console.warn('⚠️ Could not store driver locally:', localError);
       }

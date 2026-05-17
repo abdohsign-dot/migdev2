@@ -4,6 +4,7 @@ import Share from 'react-native-share';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalDatabase } from '../../hooks/useLocalDatabase';
+import useAdminStore from '../../store/useAdminStore';
 import PackageCard from '../../components/PackageCard';
 import { QRCodeComponent } from '../../components/QRCodeComponent';
 import { extractQRData, generateQRString } from '../../utils/qrGenerator';
@@ -22,12 +23,23 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
   const [modalVisible, setModalVisible] = useState(false);
   const [modalInstanceKey, setModalInstanceKey] = useState(0);
   
-  const { packages = [], drivers = [], loading = false, syncing = false, refresh, assignPackageToDriver } = useLocalDatabase({ isAdmin: true });
+  const { packages: localPackages = [], drivers: localDrivers = [], loading: localLoading = false, syncing = false, refresh, assignPackageToDriver } = useLocalDatabase({ isAdmin: true });
+  const adminPackages = useAdminStore((state) => state.packages);
+  const adminDrivers = useAdminStore((state) => state.drivers);
+  const setAdminPackages = useAdminStore((state) => state.setPackages);
+  const setAdminDrivers = useAdminStore((state) => state.setDrivers);
+  const setAdminLoading = useAdminStore((state) => state.setLoading);
+
+  useEffect(() => {
+    setAdminPackages(localPackages);
+    setAdminDrivers(localDrivers);
+    setAdminLoading(localLoading);
+  }, [localPackages, localDrivers, localLoading, setAdminPackages, setAdminDrivers, setAdminLoading]);
 
   useEffect(() => {
     console.log('📋 PackageListScreen mounted');
-    console.log('📦 Packages loaded:', packages?.length || 0);
-  }, [packages]);
+    console.log('📦 Packages loaded:', adminPackages?.length || 0);
+  }, [adminPackages]);
 
   useFocusEffect(
     useCallback(() => {
@@ -52,8 +64,8 @@ export default function PackageListScreen({ navigation }: PackageListScreenProps
   }, [navigation, assignPackageToDriver]);
 
   const filteredPackages = filterStatus === 'all' 
-    ? packages
-    : packages.filter(p => p.status === filterStatus);
+    ? adminPackages
+    : adminPackages.filter(p => p.status === filterStatus);
 
   // Sort packages by next delivery deadline (limit_date + optional limit_time)
   const getDeadlineMillis = (pkg: any): number | null => {
@@ -193,7 +205,7 @@ Notes     : ${pkg.description || 'Aucune'}
         </Text>
       </View>
 
-      {loading ? (
+      {adminLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>

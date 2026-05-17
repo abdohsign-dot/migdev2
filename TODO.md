@@ -18,9 +18,10 @@
 
 ### In progress / next
 - [x] Update `useAuthStore` - add cleanup on logout
-- [ ] Create role-based navigation wrapper
-- [ ] Separate admin screens into `/admin` folder
-- [ ] Separate driver screens into `/driver` folder
+- [x] Create role-based navigation wrapper
+- [x] Separate admin screens into `/admin` folder
+- [x] Separate driver screens into `/driver` folder
+- [x] Move `Login` screen into `/auth` folder and update auth imports
 - [ ] Update all admin screens to use `useAdminStore`
 - [ ] Update all driver screens to use `useDriverStore`
 - [x] Enforce field ownership rules in sync logic
@@ -39,11 +40,15 @@
 - `src/store/useAuthStore.ts` now cleans up Realtime listeners and role-specific partitions on logout.
 - `src/utils/ownershipRules.ts` was added to validate role-based field modifications.
 - `src/utils/adminSync.ts` and `src/utils/driverSync.ts` now use `filterModifiableFields` to strictly enforce role ownership over modified fields.
+- `src/navigation/RoleBasedNavigator.tsx`, `src/navigation/AdminNavigator.tsx`, and `src/navigation/DriverNavigator.tsx` were created and wired into `App.tsx`.
+- `src/screens/auth/LoginScreen.tsx` was updated to remove direct driver-stack navigation and rely on auth/role state.
 
 ## Known remaining compile issues
 - None currently known.
 
 ## Recommended next actions
-1. Implement role-based navigation and move screens into `/admin` and `/driver` folders.
-2. Add tombstone and history tracking utilities.
-3. Add tests for role switch listener cleanup, sync queue partitioning, and offline recovery.
+1. Update all admin screens to use `useAdminStore`.
+2. Update all driver screens to use `useDriverStore`.
+3. Add operation context to every DB operation.
+4. Add tombstones and immutable history tracking.
+5. Add integration tests for role switch listener cleanup, auth-based navigation, sync queue partitioning, and offline recovery.

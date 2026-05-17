@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Package, Driver } from '../types';
+import useAdminStore from '../store/useAdminStore';
 import {
   getPackagesLocally,
   getDriversLocally,
@@ -43,6 +44,12 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  const setAdminPackages = useAdminStore((state) => state.setPackages);
+  const setAdminDrivers = useAdminStore((state) => state.setDrivers);
+  const setAdminLoading = useAdminStore((state) => state.setLoading);
+  const setAdminSyncing = useAdminStore((state) => state.setSyncing);
+  const setAdminLastSync = useAdminStore((state) => state.setLastSync);
 
   // Load data from local storage and sync from Firestore on mount
   useEffect(() => {
@@ -110,6 +117,31 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       console.error('Error setting up Supabase real-time listener:', error);
     }
   }, [driverId, isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAdminPackages(packages);
+  }, [packages, isAdmin, setAdminPackages]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAdminDrivers(drivers);
+  }, [drivers, isAdmin, setAdminDrivers]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAdminLoading(loading);
+  }, [loading, isAdmin, setAdminLoading]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAdminSyncing(syncing);
+  }, [syncing, isAdmin, setAdminSyncing]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAdminLastSync(lastSync);
+  }, [lastSync, isAdmin, setAdminLastSync]);
 
   // Event-driven sync - no more periodic refreshes
   const [packageStats, setPackageStats] = useState<any>(null);

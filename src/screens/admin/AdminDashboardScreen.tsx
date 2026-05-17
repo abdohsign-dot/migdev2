@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import { useLocalDatabase } from '../../hooks/useLocalDatabase';
+import useAdminStore from '../../store/useAdminStore';
 import useAuthStore from '../../store/useAuthStore';
 import type { AdminDashboardScreenProps } from '../../types/navigation';
 import type { Package, Driver } from '../../types';
@@ -30,7 +31,19 @@ import {
 
 const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation }) => {
   const { userRole, logout } = useAuthStore();
-  const { packages, drivers, loading, refresh, packageStats } = useLocalDatabase({ isAdmin: true });
+  const { packages: localPackages, drivers: localDrivers, loading: localLoading, refresh, packageStats } = useLocalDatabase({ isAdmin: true });
+  const adminPackages = useAdminStore((state) => state.packages);
+  const adminDrivers = useAdminStore((state) => state.drivers);
+  const adminLoading = useAdminStore((state) => state.loading);
+  const setAdminPackages = useAdminStore((state) => state.setPackages);
+  const setAdminDrivers = useAdminStore((state) => state.setDrivers);
+  const setAdminLoading = useAdminStore((state) => state.setLoading);
+
+  useEffect(() => {
+    setAdminPackages(localPackages);
+    setAdminDrivers(localDrivers);
+    setAdminLoading(localLoading);
+  }, [localPackages, localDrivers, localLoading, setAdminPackages, setAdminDrivers, setAdminLoading]);
   
   const [statsLoading, setStatsLoading] = useState(true);
   const isFocused = useIsFocused();
@@ -50,14 +63,14 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
 
 
   // Use real-time stats from hook
-  const totalPackages = packageStats?.total || 0;
-  const totalDrivers = drivers.length;
+  const totalPackages = packageStats?.total || adminPackages.length || 0;
+  const totalDrivers = adminDrivers.length;
   const pendingPackages = packageStats?.pending || 0;
   const inTransitPackages = packageStats?.inTransit || 0;
   const deliveredPackages = packageStats?.delivered || 0;
   const returnedPackages = packageStats?.returned || 0;
 
-  if (loading || statsLoading) {
+  if (adminLoading || statsLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>

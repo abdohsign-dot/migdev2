@@ -616,7 +616,7 @@ const generateUUID = (): string => {
 };
 
 // Local-first package creation with immediate sync of new package only
-export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<void> => {
+export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<Package> => {
   try {
     const newPackage: Package = {
       ...packageData,
@@ -666,6 +666,8 @@ export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_a
         synced: false
       });
     }
+
+    return newPackage;
   } catch (error) {
     console.error('Error creating package:', error);
     throw error;

@@ -7,11 +7,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ModifyDriverScreenProps } from '../../types/navigation';
 import { isPreStoredDriverId, activateDriverId } from '../../config/credentials';
+import useAdminStore from '../../store/useAdminStore';
 import useAuthStore from '../../store/useAuthStore';
 
 const VEHICLE_TYPES = ['Moto', 'Voiture', 'Camionnette'];
 
 export default function ModifyDriverScreen({ navigation, route }: ModifyDriverScreenProps) {
+  const adminDrivers = useAdminStore((state) => state.drivers);
+  const setAdminDrivers = useAdminStore((state) => state.setDrivers);
   const { driver } = route.params;
   
   const [name, setName] = useState(driver.name || '');
@@ -108,6 +111,9 @@ export default function ModifyDriverScreen({ navigation, route }: ModifyDriverSc
         });
         
         console.log('✅ Driver updated locally and queued for sync');
+        setAdminDrivers(adminDrivers.map((existing: any) =>
+          existing.id === driver.id ? { ...existing, ...updatedDriver } : existing
+        ));
 
         // 3. Immediately flush queue to Supabase (fire-and-forget)
         processSyncQueue()

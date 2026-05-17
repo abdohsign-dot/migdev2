@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { getActiveDrivers, DRIVER_CREDENTIALS } from '../../config/credentials';
+import useAdminStore from '../../store/useAdminStore';
 import { DriverListScreenProps } from '../../types/navigation';
 import { 
   SPACING, 
@@ -12,6 +13,8 @@ import {
 } from '../../utils/responsive';
 
 export default function DriverListScreen({ navigation, route }: DriverListScreenProps) {
+  const adminDrivers = useAdminStore((state) => state.drivers);
+  const setAdminDrivers = useAdminStore((state) => state.setDrivers);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [firebaseAvailable, setFirebaseAvailable] = useState(true);
@@ -94,6 +97,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
 
           // Ensure the screen stops spinning even if realtime successfully connects
           setDrivers(uniqueLocalDrivers);
+          setAdminDrivers(uniqueLocalDrivers);
           setLoading(false);
           
           return () => {
@@ -105,6 +109,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
           setFirebaseAvailable(false);
           setUnsubscribeFn(null);
           setDrivers(uniqueLocalDrivers);
+          setAdminDrivers(uniqueLocalDrivers);
           setLoading(false);
           return () => {
             isSubscribed = false;
@@ -133,17 +138,17 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
       const uniqueLocalDrivers = buildDriverList(localDrivers);
 
       // Merge with current Firebase drivers (if any)
-      setDrivers(prevDrivers => {
-        const firebaseDrivers = prevDrivers.filter(d => d.source === 'firebase');
+      const mergedDrivers = (() => {
+        const firebaseDrivers = drivers.filter(d => d.source === 'firebase');
         const firebaseIds = new Set(firebaseDrivers.map(d => d.id));
-
-        // Add unique local drivers that aren't in Firebase
         const newLocalDrivers = uniqueLocalDrivers.filter(ld => !firebaseIds.has(ld.id));
-
         const merged = [...firebaseDrivers, ...newLocalDrivers];
         if (__DEV__) console.log('🔄 Manual refresh: merged', merged.length, 'drivers (', firebaseDrivers.length, 'Firebase +', newLocalDrivers.length, 'local)');
         return merged;
-      });
+      })();
+
+      setDrivers(mergedDrivers);
+      setAdminDrivers(mergedDrivers);
     } catch (error) {
       console.error('Error refreshing drivers:', error);
     } finally {
@@ -174,6 +179,7 @@ export default function DriverListScreen({ navigation, route }: DriverListScreen
           const uniqueDrivers = buildDriverList(localDrivers);
           if (__DEV__) console.log('🔄 Auto-refresh on focus: loaded', uniqueDrivers.length, 'drivers');
           setDrivers(uniqueDrivers);
+          setAdminDrivers(uniqueDrivers);
         } catch (error) {
           console.error('Error refreshing on focus:', error);
         }

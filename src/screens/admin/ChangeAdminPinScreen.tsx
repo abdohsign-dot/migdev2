@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import useAdminStore from '../../store/useAdminStore';
 import { changeAdminPin } from '../../utils/adminPin';
 
 interface ChangeAdminPinScreenProps {
@@ -19,6 +20,7 @@ interface ChangeAdminPinScreenProps {
 }
 
 export default function ChangeAdminPinScreen({ navigation }: ChangeAdminPinScreenProps) {
+  const lastSync = useAdminStore((state) => state.lastSync);
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -112,6 +114,9 @@ export default function ChangeAdminPinScreen({ navigation }: ChangeAdminPinScree
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.syncInfo}>
+            <Text style={styles.syncInfoText}>Dernière sync admin: {lastSync ? new Date(lastSync).toLocaleString() : 'Jamais'}</Text>
+          </View>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>PIN Actuel *</Text>
             <TextInput

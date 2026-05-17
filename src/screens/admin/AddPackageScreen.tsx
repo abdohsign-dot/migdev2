@@ -5,11 +5,14 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { AddPackageScreenProps } from '../../types/navigation';
 import { validatePackageData, validateNumber, validateCoordinates, sanitizeInput } from '../../utils/inputValidation';
 import { useRoute } from '@react-navigation/native';
+import useAdminStore from '../../store/useAdminStore';
 import { formatDate as formatDateUtil, formatDateISO, parseDateString } from '../../utils/dateFormatter';
+import type { Package } from '../../types';
 
 export default function AddPackageScreen({ navigation }: AddPackageScreenProps) {
   const route = useRoute();
   const scannedData = (route.params as any)?.scannedData;
+  const addAdminPackage = useAdminStore((state) => state.addPackage);
 
   // Date picker states
   const [showDateOfArrivePicker, setShowDateOfArrivePicker] = useState(false);
@@ -161,7 +164,8 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
 
       // Create package with validated and sanitized data
       // Note: created_at, updated_at, and version are auto-set by createPackage()
-      await createPackage({
+      const newPackage: Package = {
+        id: `PKG-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
         ref_number: generatePackageRef(), // Use PKG-xxxxxx format
         status: "Pending",
         sender_name: sanitizedData.sender_name || undefined,
@@ -183,12 +187,17 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
         is_paid: isPaid,
         assigned_to: undefined,
         created_at: timestamp,
+        updated_at: timestamp,
+        version: 1,
         assigned_at: undefined,
         accepted_at: undefined,
         delivered_at: undefined,
         return_reason: undefined,
         statusHistory: [],
-      });
+      };
+
+      const createdPackage = await createPackage(newPackage);
+      addAdminPackage(createdPackage);
 
       Alert.alert("Succès", "Colis créé avec succès !");
       navigation.goBack();
