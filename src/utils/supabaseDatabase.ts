@@ -47,6 +47,52 @@ export const getPackagesServiceRole = async (): Promise<Package[]> => {
   }
 };
 
+/** Packages assigned to one driver (service role) — avoids downloading the full table. */
+export const getPackagesServiceRoleForAssignee = async (
+  assignedToUuid: string
+): Promise<Package[]> => {
+  try {
+    const db = getDbServiceRole();
+    const { data, error } = await db
+      .from('packages')
+      .select('*')
+      .eq('assigned_to', assignedToUuid)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error getting assignee packages with service role:', error);
+    throw error;
+  }
+};
+
+/** Incremental package pull (creates/updates only; run periodic full sync for deletes). */
+export const getPackagesServiceRoleSince = async (
+  sinceIso: string,
+  assignedToUuid?: string
+): Promise<Package[]> => {
+  try {
+    const db = getDbServiceRole();
+    let query = db
+      .from('packages')
+      .select('*')
+      .gte('_last_modified', sinceIso)
+      .order('_last_modified', { ascending: false });
+
+    if (assignedToUuid) {
+      query = query.eq('assigned_to', assignedToUuid);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error getting packages since timestamp:', error);
+    throw error;
+  }
+};
+
 /**
  * Get packages by driver ID
  */
@@ -491,6 +537,23 @@ export const getDriversServiceRole = async (): Promise<Driver[]> => {
     return data || [];
   } catch (error) {
     console.error('Error getting drivers with service role:', error);
+    throw error;
+  }
+};
+
+export const getDriversServiceRoleSince = async (sinceIso: string): Promise<Driver[]> => {
+  try {
+    const db = getDbServiceRole();
+    const { data, error } = await db
+      .from('drivers')
+      .select('*')
+      .gte('_last_modified', sinceIso)
+      .order('_last_modified', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error getting drivers since timestamp:', error);
     throw error;
   }
 };

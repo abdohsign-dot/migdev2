@@ -38,11 +38,11 @@ Thumbs.db
 # Android build outputs / local artifacts
 android/app/build/
 android/build/
-android/
 android/.gradle/
 android/.idea/
 android/local.properties
-android/**/*.keystore
+android/keystore.properties
+*.keystore
 *.jks
 
 # Coverage

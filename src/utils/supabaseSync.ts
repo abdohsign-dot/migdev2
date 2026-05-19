@@ -8,9 +8,12 @@ import { getCurrentUser } from './supabaseAuth';
 import { 
   getPackages, 
   getPackagesServiceRole,
+  getPackagesServiceRoleForAssignee,
+  getPackagesServiceRoleSince,
   getPackageById,
   getDrivers, 
   getDriversServiceRole,
+  getDriversServiceRoleSince,
   getDriverById,
   createPackage, 
   createPackageServiceRole,
@@ -462,40 +465,61 @@ export const updateLastSyncTime = async (driverId?: string): Promise<void> => {
 
 // SYNC FROM SUPABASE TO LOCAL
 
+const resolveDriverAssigneeUuid = async (driverId: string): Promise<string | null> => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(driverId)) return driverId;
+
+  const drivers = await getDriversServiceRole();
+  const matched = drivers.find(d => d.custom_id === driverId || d.id === driverId);
+  return matched?.id ?? null;
+};
+
+export type SyncPullOptions = {
+  /** When true, download all rows (manual refresh / periodic). Default: incremental from lastSync. */
+  forceFull?: boolean;
+};
+
 /**
- * Sync packages from Supabase to local storage
+ * Sync packages from Supabase to local storage (incremental by _last_modified when possible).
  */
-export const syncPackagesFromSupabase = async (driverId?: string): Promise<void> => {
+export const syncPackagesFromSupabase = async (
+  driverId?: string,
+  options: SyncPullOptions = {}
+): Promise<{ mode: 'full' | 'incremental'; count: number }> => {
   try {
-    // Always download packages using service role to bypass RLS policies
-    const allPackages = await getPackagesServiceRole();
-    let packages = allPackages;
+    const { forceFull = false } = options;
+    let assigneeUuid: string | undefined;
 
     if (driverId) {
-      // Resolve driver ID (could be custom_id or UUID) to UUID
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      const isUuid = uuidRegex.test(driverId);
-      let targetUuid = driverId;
-
-      if (!isUuid) {
-        const drivers = await getDriversServiceRole();
-        const matched = drivers.find(d => d.custom_id === driverId || d.id === driverId);
-        if (!matched) {
-          console.log(`ℹ️ Driver ${driverId} not found in Supabase drivers list during sync`);
-          return;
-        }
-        targetUuid = matched.id;
+      const targetUuid = await resolveDriverAssigneeUuid(driverId);
+      if (!targetUuid) {
+        console.log(`ℹ️ Driver ${driverId} not found in Supabase during sync`);
+        return { mode: 'full', count: 0 };
       }
-
-      packages = allPackages.filter(p => p.assigned_to === targetUuid);
+      assigneeUuid = targetUuid;
     }
 
-    // Store all packages locally
+    const lastSync = await getLastSyncTime(driverId);
+    const useIncremental = !forceFull && !!lastSync;
+    let packages: Package[] = [];
+    let mode: 'full' | 'incremental' = 'full';
+
+    if (useIncremental && lastSync) {
+      mode = 'incremental';
+      packages = await getPackagesServiceRoleSince(lastSync, assigneeUuid);
+    } else if (assigneeUuid) {
+      packages = await getPackagesServiceRoleForAssignee(assigneeUuid);
+    } else {
+      packages = await getPackagesServiceRole();
+    }
+
     for (const pkg of packages) {
       await storePackageLocally(pkg);
     }
 
-    console.log(`✅ Synced ${packages.length} packages from Supabase`);
+    await updateLastSyncTime(driverId);
+    console.log(`✅ Synced ${packages.length} packages (${mode}${assigneeUuid ? ', driver scoped' : ', admin'})`);
+    return { mode, count: packages.length };
   } catch (error) {
     console.error('Error syncing packages from Supabase:', error);
     throw error;
@@ -516,19 +540,27 @@ export const getPackagesByDriver = async (driverId: string): Promise<Package[]> 
 };
 
 /**
- * Sync drivers from Supabase to local storage
+ * Sync drivers from Supabase to local storage (admin only; incremental when possible).
  */
-export const syncDriversFromSupabase = async (): Promise<void> => {
+export const syncDriversFromSupabase = async (
+  options: SyncPullOptions = {}
+): Promise<{ mode: 'full' | 'incremental'; count: number }> => {
   try {
-    const drivers = await getDriversServiceRole();
+    const { forceFull = false } = options;
+    const lastSync = await getLastSyncTime(undefined);
+    const useIncremental = !forceFull && !!lastSync;
 
-    // Store all drivers locally
+    const drivers = useIncremental && lastSync
+      ? await getDriversServiceRoleSince(lastSync)
+      : await getDriversServiceRole();
+
     for (const driver of drivers) {
-      // Use the Supabase UUID as the local id
       await storeDriverLocally(driver);
     }
 
-    console.log(`✅ Synced ${drivers.length} drivers from Supabase`);
+    const mode = useIncremental ? 'incremental' : 'full';
+    console.log(`✅ Synced ${drivers.length} drivers (${mode})`);
+    return { mode, count: drivers.length };
   } catch (error) {
     console.error('Error syncing drivers from Supabase:', error);
     throw error;
@@ -684,26 +716,12 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
       console.warn(`[syncQueue] ⚠️ ${failedOps.length}/${localQueue.length} ops failed and remain in queue for retry`);
     }
 
-    const [freshPackages, freshDrivers] = await Promise.all([
-      (async () => {
-        const pkgs = await getPackagesServiceRole();
-        for (const pkg of pkgs) {
-          await storePackageLocally(pkg);
-        }
-        console.log(`✅ Synced ${pkgs.length} packages from Supabase (service role)`);
-        return pkgs.length;
-      })(),
-      (async () => {
-        const drs = await getDriversServiceRole();
-        for (const driver of drs) {
-          await storeDriverLocally(driver);
-        }
-        console.log(`✅ Synced ${drs.length} drivers from Supabase (service role)`);
-        return drs.length;
-      })(),
-    ]);
+    // Merge remote changes after upload (incremental — no full-table re-download).
+    await syncPackagesFromSupabase(driverId);
+    if (!driverId) {
+      await syncDriversFromSupabase();
+    }
 
-    await updateLastSyncTime(driverId);
     console.log('✅ Local sync queue processed successfully (cleared)');
   } catch (error) {
     console.error('Error processing sync queue:', error);
@@ -934,14 +952,14 @@ export const performFullSync = async (driverId?: string): Promise<void> => {
     await migrateLocalPackagesToSupabase();
     await migrateLocalDriversToSupabase();
 
-    // Step 1: Download latest data from Supabase
-    await Promise.all([
-      syncPackagesFromSupabase(driverId),
-      syncDriversFromSupabase(),
-    ]);
+    // Step 1: Full download from Supabase
+    await syncPackagesFromSupabase(driverId, { forceFull: true });
+    if (!driverId) {
+      await syncDriversFromSupabase({ forceFull: true });
+    }
 
     // Step 2: Upload local changes to Supabase
-    await processSyncQueue();
+    await processSyncQueue(driverId);
 
     console.log('✅ Full sync completed successfully');
   } catch (error) {

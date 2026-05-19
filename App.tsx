@@ -1,10 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Button, LogBox, StatusBar } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SplashScreen from 'expo-splash-screen';
 import RoleBasedNavigator from './src/navigation/RoleBasedNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
 // AppCheck removed - Firebase App Check no longer needed
+
+/** Minimum time the native splash (launcher image) stays visible on cold start. */
+const MIN_SPLASH_MS = 2000;
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Suppress minor warnings in production
 LogBox.ignoreLogs([
@@ -21,6 +27,9 @@ export default function App() {
   const [retryCount, setRetryCount] = useState(0);
 
   const initializeApp = useCallback(async () => {
+    const splashStartedAt = Date.now();
+    let fatalError: string | null = null;
+
     try {
       console.log('🚀 App starting...');
       
@@ -73,22 +82,29 @@ export default function App() {
       }
 
       console.log('✅ App initialized successfully');
-      setError(null);
-      setIsReady(true);
+      fatalError = null;
     } catch (err) {
       console.error('❌ App initialization error:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
-      
-      // Check if it's a recoverable error
+
       if (errorMessage.includes('Firebase') || errorMessage.includes('firestore')) {
-        // Firebase errors - try to continue
         console.warn('Firebase error - continuing in offline mode');
-        setError(null);
-        setIsReady(true);
+        fatalError = null;
       } else {
-        setError(errorMessage);
-        setIsReady(true);
+        fatalError = errorMessage;
       }
+    } finally {
+      const elapsed = Date.now() - splashStartedAt;
+      if (elapsed < MIN_SPLASH_MS) {
+        await new Promise((resolve) => setTimeout(resolve, MIN_SPLASH_MS - elapsed));
+      }
+      try {
+        await SplashScreen.hideAsync();
+      } catch {
+        // ignore if splash already hidden
+      }
+      setError(fatalError);
+      setIsReady(true);
     }
   }, []);
 

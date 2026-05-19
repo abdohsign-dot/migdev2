@@ -17,12 +17,17 @@ const ADMIN_LAST_SYNC_KEY = '@admin:lastSync';
 const getDriverPackagesKey = (driverId: string) => `@driver:${driverId}:packages`;
 const getDriverSyncQueueKey = (driverId: string) => `@driver:${driverId}:syncQueue`;
 const getDriverLastSyncKey = (driverId: string) => `@driver:${driverId}:lastSync`;
+const getDriverHiddenPackagesKey = (storageDriverId: string) =>
+  `@driver:${storageDriverId}:hiddenPackages`;
 
 const getPackageStorageKey = (driverId?: string) =>
   driverId ? getDriverPackagesKey(driverId) : ADMIN_PACKAGES_KEY;
 
 const getSyncQueueStorageKey = (driverId?: string) =>
   driverId ? getDriverSyncQueueKey(driverId) : ADMIN_SYNC_QUEUE_KEY;
+
+/** Max packages loaded into list UI (admin + poll refresh). */
+export const LOCAL_PACKAGES_UI_LIMIT = 10_000;
 
 const getLastSyncStorageKey = (driverId?: string) =>
   driverId ? getDriverLastSyncKey(driverId) : ADMIN_LAST_SYNC_KEY;
@@ -178,6 +183,7 @@ export const clearRolePartitions = async (role: 'admin' | 'deliverer' | null, dr
         await AsyncStorage.removeItem(getDriverPackagesKey(storageDriverId));
         await AsyncStorage.removeItem(getDriverSyncQueueKey(storageDriverId));
         await AsyncStorage.removeItem(getDriverLastSyncKey(storageDriverId));
+        await AsyncStorage.removeItem(getDriverHiddenPackagesKey(storageDriverId));
         console.log(`🗑️ Driver partition cleared for ${driverId}`);
       }
     }
@@ -232,7 +238,38 @@ const removePackageFromStorage = async (packageId: string, driverId?: string): P
 const syncPackageToPartitions = async (pkg: Package): Promise<void> => {
   await upsertPackageInStorage(pkg); // Admin partition
   if (pkg.assigned_to) {
-    await upsertPackageInStorage(pkg, pkg.assigned_to);
+    const hidden = await getDriverHiddenPackageIds(pkg.assigned_to);
+    if (!hidden.has(pkg.id)) {
+      await upsertPackageInStorage(pkg, pkg.assigned_to);
+    }
+  }
+};
+
+/**
+ * Package IDs the driver chose to hide from their list (driver partition only).
+ * Admin data and Supabase are unchanged.
+ */
+export const getDriverHiddenPackageIds = async (driverId: string): Promise<Set<string>> => {
+  try {
+    const storageDriverId = await resolveDriverStorageId(driverId);
+    if (!storageDriverId) return new Set();
+    const data = await AsyncStorage.getItem(getDriverHiddenPackagesKey(storageDriverId));
+    const ids: string[] = data ? JSON.parse(data) : [];
+    return new Set(ids);
+  } catch {
+    return new Set();
+  }
+};
+
+const addDriverHiddenPackageId = async (
+  packageId: string,
+  storageDriverId: string
+): Promise<void> => {
+  const data = await AsyncStorage.getItem(getDriverHiddenPackagesKey(storageDriverId));
+  const ids: string[] = data ? JSON.parse(data) : [];
+  if (!ids.includes(packageId)) {
+    ids.push(packageId);
+    await AsyncStorage.setItem(getDriverHiddenPackagesKey(storageDriverId), JSON.stringify(ids));
   }
 };
 
@@ -403,18 +440,28 @@ export const deletePackageLocally = async (packageId: string): Promise<void> => 
   }
 };
 
-export const deleteDriverPackageLocally = async (packageId: string, driverId: string): Promise<void> => {
+/**
+ * Hide a package from the driver's list only (persists across sync/refresh).
+ */
+export const hideDriverPackageFromList = async (
+  packageId: string,
+  driverId: string
+): Promise<void> => {
   try {
     const storageDriverId = await resolveDriverStorageId(driverId);
-    if (storageDriverId) {
-      await removePackageFromStorage(packageId, storageDriverId);
-      console.log(`🗑️ Package ${packageId} removed only from driver ${driverId} partition`);
-    }
+    if (!storageDriverId) return;
+
+    await addDriverHiddenPackageId(packageId, storageDriverId);
+    await removePackageFromStorage(packageId, storageDriverId);
+    console.log(`👁️‍🗨️ Package ${packageId} hidden from driver ${driverId} list`);
   } catch (error) {
-    console.error('Error deleting package from driver partition:', error);
+    console.error('Error hiding package from driver list:', error);
     throw error;
   }
 };
+
+/** @deprecated Use hideDriverPackageFromList */
+export const deleteDriverPackageLocally = hideDriverPackageFromList;
 
 export const getLastSyncTime = async (driverId?: string): Promise<string> => {
   try {
@@ -476,15 +523,17 @@ export const getPackagesLocally = async (
     // If driverId provided, filter packages assigned to this driver
     if (driverId) {
       const assignedToUuid = storageDriverId!;
+      const hiddenIds = await getDriverHiddenPackageIds(driverId);
 
       const filtered = allPackages.filter(
         pkg =>
+          !hiddenIds.has(pkg.id) &&
           pkg.assigned_to === assignedToUuid &&
           (includeArchived || !pkg.is_archived || pkg.status === 'Archived')
       );
 
       console.log(
-        `🚚 Driver ${driverId} (assigned_to UUID: ${assignedToUuid}) packages: ${filtered.length} (filtered from ${allPackages.length})`
+        `🚚 Driver ${driverId} (assigned_to UUID: ${assignedToUuid}) packages: ${filtered.length} (filtered from ${allPackages.length}, hidden=${hiddenIds.size})`
       );
 
       // Apply pagination

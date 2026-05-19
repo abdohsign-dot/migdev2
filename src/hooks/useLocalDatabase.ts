@@ -4,7 +4,7 @@
  * React hook for managing local database with Firestore sync
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Package, Driver } from '../types';
 import useAdminStore from '../store/useAdminStore';
@@ -19,7 +19,9 @@ import {
   upsertPackageLocally,
   deletePackageLocally,
   addToSyncQueue,
+  LOCAL_PACKAGES_UI_LIMIT,
 } from '../utils/localDatabase';
+import { registerRemotePoll } from '../utils/remotePollSync';
 import { isPreStoredDriverId } from '../config/credentials';
 
 
@@ -73,60 +75,54 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     init();
   }, [driverId, isAdmin]);
 
-  // Real-time listener for package changes using Supabase
-  useEffect(() => {
+  /**
+   * Check sync queue status
+   */
+  const checkSyncQueue = useCallback(async () => {
     try {
-      const { listenToPackages, listenToDriverPackages, cleanupListeners, unsubscribe } = require('../utils/supabaseRealtime');
-      
-      // Remove any stale admin/driver subscriptions before creating a fresh one.
-      cleanupListeners('all');
-      let channel: any = null;
-
-      const handleRealtimeUpdate = async (payload: any) => {
-        try {
-          console.log('🔄 Supabase real-time update:', payload.eventType, payload.new?.id || payload.old?.id);
-          
-          // Refresh packages:
-          // 1) Pull latest from Supabase (RLS filters rows for drivers/admin)
-          // 2) Re-scope and reload local cache so UI updates immediately (no need to toggle screens)
-          const { syncPackagesFromSupabase } = require('../utils/supabaseSync');
-          await syncPackagesFromSupabase(driverId || undefined);
-
-          // Hard scope for non-admin drivers to avoid showing cached/unassigned packages.
-          const updatedPackages = shouldScopeToDriver
-            ? await getPackagesLocally(driverId, false)
-            : await getPackagesLocally(driverId, true);
-
-          setPackages(updatedPackages);
-          
-          // Update stats
-          const stats = await getPackageStats(driverId);
-          setPackageStats(stats);
-          setLastUpdate(new Date().toISOString());
-        } catch (error) {
-          console.error('Error handling real-time update:', error);
-        }
-      };
-
-      if (isAdmin) {
-        // Admin listens to all packages
-        channel = listenToPackages(handleRealtimeUpdate);
-      } else if (driverId) {
-        // Driver listens only to their assigned packages
-        channel = listenToDriverPackages(driverId, handleRealtimeUpdate);
-      } else {
-        return; // No valid driverId or isAdmin
-      }
-
-      return () => {
-        if (channel) {
-          unsubscribe(channel);
-        }
-      };
+      const queue = await getSyncQueue(driverId);
+      setPendingSyncCount(queue.length);
     } catch (error) {
-      console.error('Error setting up Supabase real-time listener:', error);
+      console.error('Error checking sync queue:', error);
     }
-  }, [driverId, isAdmin]);
+  }, [driverId]);
+
+  // Foreground polling: role-scoped pull (admin partition vs driver partition).
+  const reloadPackagesFromLocal = useCallback(async () => {
+    try {
+      const updatedPackages = shouldScopeToDriver
+        ? await getPackagesLocally(driverId, false, LOCAL_PACKAGES_UI_LIMIT)
+        : await getPackagesLocally(isAdmin ? undefined : driverId, isAdmin, LOCAL_PACKAGES_UI_LIMIT);
+
+      setPackages(updatedPackages);
+      if (isAdmin) {
+        setDrivers(await getDriversLocally());
+      }
+      setLastSync(await getLastSyncTime(driverId));
+      const stats = await getPackageStats(driverId);
+      setPackageStats(stats);
+      setLastUpdate(new Date().toISOString());
+      await checkSyncQueue();
+    } catch (error) {
+      console.error('Error reloading packages after remote poll:', error);
+    }
+  }, [driverId, isAdmin, shouldScopeToDriver, checkSyncQueue]);
+
+  const pollSubscriberIdRef = useRef(
+    `${isAdmin ? 'admin' : 'deliverer'}:${driverId ?? 'none'}:${Math.random().toString(36).slice(2, 9)}`
+  );
+
+  useEffect(() => {
+    if (!isAdmin && !driverId) return;
+
+    const role = isAdmin ? 'admin' : 'deliverer';
+    return registerRemotePoll({
+      id: pollSubscriberIdRef.current,
+      role,
+      driverId: isAdmin ? undefined : driverId,
+      onSynced: reloadPackagesFromLocal,
+    });
+  }, [driverId, isAdmin, reloadPackagesFromLocal]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -181,7 +177,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       // But we still load local packages so QR-created drafts are visible for "Accepter Mission".
       // (Do NOT clear packages to preserve locally stored QR drafts.)
       if (!isAdmin && !driverId) {
-        const localPackages = await getPackagesLocally(undefined, true); // includeArchived=true
+        const localPackages = await getPackagesLocally(undefined, true, LOCAL_PACKAGES_UI_LIMIT);
         setPackages(localPackages);
         setDrivers(await getDriversLocally());
         setLastSync(await getLastSyncTime(driverId));
@@ -189,7 +185,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       }
 
       const [localPackages, localDrivers, syncTime] = await Promise.all([
-        getPackagesLocally(driverId, isAdmin), // Admin gets all packages including archived
+        getPackagesLocally(driverId, isAdmin, LOCAL_PACKAGES_UI_LIMIT),
         getDriversLocally(),
         getLastSyncTime(driverId),
       ]);
@@ -197,28 +193,18 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       // Hard gate: if non-admin and driverId exists, never keep unscoped packages in state.
       // This prevents old cached/offline packages from "leaking" into the driver screen.
       const scopedPackages = shouldScopeToDriver
-        ? await getPackagesLocally(driverId, false)
+        ? await getPackagesLocally(driverId, false, LOCAL_PACKAGES_UI_LIMIT)
         : localPackages;
 
       setPackages(scopedPackages);
-      setDrivers(localDrivers);
+      if (isAdmin) {
+        setDrivers(localDrivers);
+      }
       setLastSync(syncTime);
     } catch (error) {
       console.error('Error loading local data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  /**
-   * Check sync queue status
-   */
-  const checkSyncQueue = async () => {
-    try {
-      const queue = await getSyncQueue(driverId);
-      setPendingSyncCount(queue.length);
-    } catch (error) {
-      console.error('Error checking sync queue:', error);
     }
   };
 
@@ -510,21 +496,6 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
     setPackages(prev => [...prev, newPkg]);
   }, []);
 
-  /**
-   * Process sync queue periodically (every 30s) as a safety-net for missed immediate flushes
-   */
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        await processSyncQueue(driverId);
-        console.log('🔄 Sync queue processed (periodic)');
-      } catch (error) {
-        console.error('Error in periodic sync queue processing:', error);
-      }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [driverId]);
 
   const archivePackages = async (packageIds: string[]) => {
     try {

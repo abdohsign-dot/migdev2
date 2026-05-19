@@ -87,8 +87,8 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
           onPress: async () => {
             try {
               if (driverId) {
-                const { deleteDriverPackageLocally } = require('../../utils/localDatabase');
-                await deleteDriverPackageLocally(pkgId, driverId);
+                const { hideDriverPackageFromList } = require('../../utils/localDatabase');
+                await hideDriverPackageFromList(pkgId, driverId);
                 await reloadLocalData();
                 ToastAndroid.show('Colis masqué de la liste', ToastAndroid.SHORT);
               }

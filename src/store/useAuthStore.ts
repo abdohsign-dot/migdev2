@@ -59,6 +59,24 @@ const useAuthStore = create<AuthState>((set) => ({
       } catch (error) {
         console.log('ℹ️ Could not clear listeners:', error);
       }
+
+      try {
+        const { clearRemotePoll } = require('../utils/remotePollSync');
+        clearRemotePoll();
+        console.log('✅ Remote poll cleared');
+      } catch (error) {
+        console.log('ℹ️ Could not clear remote poll:', error);
+      }
+
+      try {
+        const useAdminStore = require('./useAdminStore').default;
+        const useDriverStore = require('./useDriverStore').default;
+        useAdminStore.getState().clearAdminState();
+        useDriverStore.getState().clearDriverState();
+        console.log('✅ Role stores cleared');
+      } catch (error) {
+        console.log('ℹ️ Could not clear role stores:', error);
+      }
       
       // Clear in-memory sensitive data cache (prevents data leaking between sessions)
       try {
