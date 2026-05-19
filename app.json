@@ -8,13 +8,18 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/ic_launcher.png",
+      "image": "./assets/splash.png",
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/splash_logo.png",
+        "backgroundColor": "#ffffff"
+      },
+      "splash": {
+        "image": "./assets/splash.png",
+        "resizeMode": "cover",
         "backgroundColor": "#ffffff"
       },
       "permissions": [

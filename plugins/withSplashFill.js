@@ -7,7 +7,7 @@ const withSplashFill = (config) => {
     'android',
     async (config) => {
       const projectRoot = config.modRequest.projectRoot;
-      const splashSource = path.join(projectRoot, 'assets', 'ic_launcher.png');
+      const splashSource = path.join(projectRoot, 'assets', 'splash.png');
       const drawableDir = path.join(projectRoot, 'android/app/src/main/res/drawable-nodpi');
       const drawableTarget = path.join(drawableDir, 'splashscreen_image.png');
       const xmlPath = path.join(projectRoot, 'android/app/src/main/res/drawable/ic_launcher_background.xml');
