@@ -10,11 +10,11 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 /** Minimum time the native splash (launcher image) stays visible on cold start. */
 const MIN_SPLASH_MS = 2000;
 
-SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.preventAutoHideAsync().catch(() => { });
 
 // Suppress minor warnings in production
 LogBox.ignoreLogs([
-  'Require cycle:', 
+  'Require cycle:',
   'componentWillMount has been renamed',
   'SafeAreaView has been deprecated'
 ]);
@@ -32,7 +32,7 @@ export default function App() {
 
     try {
       console.log('🚀 App starting...');
-      
+
       // 1. Test AsyncStorage is ready
       try {
         await AsyncStorage.setItem('@app_init_test', 'ok');
@@ -74,7 +74,7 @@ export default function App() {
       // 5. Firebase initialization removed - migrated to Supabase
       try {
         console.log('✅ Firebase initialization skipped - using Supabase instead');
-        
+
         console.log('✅ Firestore and Auth initialized');
       } catch (fsError) {
         console.warn('⚠️ Firebase initialization warning:', fsError);
@@ -123,7 +123,7 @@ export default function App() {
       <View style={styles.container}>
         <View style={styles.loading}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading SI HICHAM...</Text>
+          <Text style={styles.loadingText}>Loading DeliveryX...</Text>
           {retryCount > 0 && (
             <Text style={styles.retryText}>Retry attempt {retryCount}</Text>
           )}
