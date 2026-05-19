@@ -34,7 +34,15 @@
       "expo-dev-client",
       "expo-camera",
       "expo-secure-store",
-      "./plugins/withSplashFill"
+      "./plugins/withSplashFill",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#ffffff",
+          "image": "./assets/splash.png",
+          "resizeMode": "cover"
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
