@@ -189,6 +189,7 @@ export default function AddPackageScreen({ navigation }: AddPackageScreenProps) 
         created_at: timestamp,
         updated_at: timestamp,
         version: 1,
+        hidden_by_driver: false,
         assigned_at: undefined,
         accepted_at: undefined,
         delivered_at: undefined,

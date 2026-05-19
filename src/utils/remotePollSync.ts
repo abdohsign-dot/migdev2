@@ -8,7 +8,7 @@ import { isOnline } from './networkDetection';
 import useAuthStore from '../store/useAuthStore';
 
 /** Background poll interval (foreground only). */
-export const REMOTE_POLL_INTERVAL_MS = 30_000;
+export const REMOTE_POLL_INTERVAL_MS = 300_000; // 5 minutes (Fallback only, Realtime handles instant updates)
 
 /** Full re-download every N polls to pick up remote deletes. */
 const FULL_SYNC_EVERY_N_POLLS = 10;

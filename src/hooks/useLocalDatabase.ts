@@ -22,6 +22,7 @@ import {
   LOCAL_PACKAGES_UI_LIMIT,
 } from '../utils/localDatabase';
 import { registerRemotePoll } from '../utils/remotePollSync';
+import { listenToPackages, listenToDriverPackages, listenToDrivers, createPackageUpdateHandler, createDriverUpdateHandler } from '../utils/supabaseRealtime';
 import { isPreStoredDriverId } from '../config/credentials';
 
 
@@ -122,6 +123,51 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       driverId: isAdmin ? undefined : driverId,
       onSynced: reloadPackagesFromLocal,
     });
+  }, [driverId, isAdmin, reloadPackagesFromLocal]);
+
+  // Realtime subscriptions for instant updates (bypassing the 30s poll interval)
+  useEffect(() => {
+    if (!isAdmin && !driverId) return;
+
+    const handlePackageChange = async (pkg: Package, isDelete = false) => {
+      try {
+        if (isDelete) {
+          await deletePackageLocally(pkg.id);
+        } else {
+          await upsertPackageLocally(pkg);
+        }
+        await reloadPackagesFromLocal();
+      } catch (e) {
+        console.error('Realtime package handling error:', e);
+      }
+    };
+
+    const packageHandler = createPackageUpdateHandler(
+      (newPkg) => handlePackageChange(newPkg),
+      (updatedPkg) => handlePackageChange(updatedPkg),
+      (oldPkg) => handlePackageChange(oldPkg, true)
+    );
+
+    const driverHandler = createDriverUpdateHandler(
+      () => reloadPackagesFromLocal(),
+      () => reloadPackagesFromLocal(),
+      () => reloadPackagesFromLocal()
+    );
+
+    let pkgChannel: any;
+    let driverChannel: any;
+
+    if (isAdmin) {
+      pkgChannel = listenToPackages(packageHandler);
+      driverChannel = listenToDrivers(driverHandler);
+    } else {
+      pkgChannel = listenToDriverPackages(driverId, packageHandler);
+    }
+
+    return () => {
+      if (pkgChannel) pkgChannel.unsubscribe();
+      if (driverChannel) driverChannel.unsubscribe();
+    };
   }, [driverId, isAdmin, reloadPackagesFromLocal]);
 
   useEffect(() => {
@@ -308,6 +354,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
             status: 'Assigned' as const,
             assigned_to: targetDriverId,
             assigned_at: timestamp,
+            hidden_by_driver: false,
             _last_modified: new Date().toISOString(),
           };
           

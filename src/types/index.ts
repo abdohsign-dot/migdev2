@@ -102,6 +102,7 @@ export interface Package {
   archived_at?: string;
   archivedByDriver?: boolean;
   archivedByAdmin?: boolean;
+  hidden_by_driver?: boolean;
   statusHistory: StatusHistoryEntry[];
   changedBy?: OperationContext;
   // Deprecated: kept for backward compatibility during migration

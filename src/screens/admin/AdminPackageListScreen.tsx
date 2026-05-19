@@ -365,6 +365,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
           status: 'Pending' as const,
           assigned_to: null,
           assigned_at: null,
+          hidden_by_driver: false,
           _last_modified: timestamp,
         };
 
@@ -380,6 +381,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
               status: 'Pending',
               assigned_to: null,
               assigned_at: null,
+              hidden_by_driver: false,
               _last_modified: timestamp,
             }
           },

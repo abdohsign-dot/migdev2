@@ -257,6 +257,7 @@ export const migrateLocalPackagesToSupabase = async (): Promise<void> => {
           supplement_info: pkg.supplement_info || null,
           is_archived: pkg.is_archived || false,
           archived_at: pkg.archived_at || null,
+          hidden_by_driver: pkg.hidden_by_driver || false,
           created_at: pkg.created_at || new Date().toISOString(),
           updated_at: pkg._last_modified || pkg.updated_at || new Date().toISOString(),
           version: parseInt(pkg._version || pkg.version?.toString() || '1') || 1,

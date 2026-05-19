@@ -87,8 +87,8 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
           onPress: async () => {
             try {
               if (driverId) {
-                const { hideDriverPackageFromList } = require('../../utils/localDatabase');
-                await hideDriverPackageFromList(pkgId, driverId);
+                const { updatePackage } = require('../../utils/localDatabase');
+                await updatePackage(pkgId, { hidden_by_driver: true });
                 await reloadLocalData();
                 ToastAndroid.show('Colis masqué de la liste', ToastAndroid.SHORT);
               }
