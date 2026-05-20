@@ -25,6 +25,7 @@
       "package": "com.anonymous.delivry"
     },
     "plugins": [
+      "./plugins/withSplashFill",
       "expo-dev-client",
       "expo-camera",
       "expo-secure-store"

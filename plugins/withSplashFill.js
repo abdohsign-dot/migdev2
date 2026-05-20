@@ -65,33 +65,39 @@ const withSplashFill = (config) => {
       if (fs.existsSync(stylesPath)) {
         let stylesContents = fs.readFileSync(stylesPath, 'utf8');
 
-        // Replace background + animated icon within Theme.App.SplashScreen.
-        stylesContents = stylesContents.replace(
-          /<item name="windowSplashScreenBackground">.*?<\/item>/g,
-          '<item name="windowSplashScreenBackground">@android:color/transparent</item>'
-        );
-
-        stylesContents = stylesContents.replace(
-          /<item name="windowSplashScreenAnimatedIcon">.*?<\/item>/g,
-          '<item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_image</item>'
-        );
-
-        // Force resize behavior.
-        if (/<item name="android:windowSplashScreenBehavior">.*?<\/item>/.test(stylesContents)) {
+        // Make the animated icon transparent so it doesn't scale/shrink in the center
+        if (stylesContents.includes('name="windowSplashScreenAnimatedIcon"')) {
           stylesContents = stylesContents.replace(
-            /<item name="android:windowSplashScreenBehavior">.*?<\/item>/g,
-            '<item name="android:windowSplashScreenBehavior">resize</item>'
+            /<item name="windowSplashScreenAnimatedIcon">.*?<\/item>/g,
+            '<item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>'
           );
         } else {
-          // Inject if missing.
           stylesContents = stylesContents.replace(
             /<style name="Theme\.App\.SplashScreen" parent="Theme\.SplashScreen">/,
-            '<style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">\n    <item name="android:windowSplashScreenBehavior">resize</item>'
+            '<style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">\n    <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>'
           );
         }
 
-        // Ensure windowBackground fallback exists.
-        if (!stylesContents.includes('name="android:windowBackground"')) {
+        // Set the splash screen background to transparent
+        if (stylesContents.includes('name="windowSplashScreenBackground"')) {
+          stylesContents = stylesContents.replace(
+            /<item name="windowSplashScreenBackground">.*?<\/item>/g,
+            '<item name="windowSplashScreenBackground">@android:color/transparent</item>'
+          );
+        } else {
+          stylesContents = stylesContents.replace(
+            /<style name="Theme\.App\.SplashScreen" parent="Theme\.SplashScreen">/,
+            '<style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">\n    <item name="windowSplashScreenBackground">@android:color/transparent</item>'
+          );
+        }
+
+        // Set the android:windowBackground to draw our full-screen launcher background drawable
+        if (stylesContents.includes('name="android:windowBackground"')) {
+          stylesContents = stylesContents.replace(
+            /<item name="android:windowBackground">.*?<\/item>/g,
+            '<item name="android:windowBackground">@drawable/ic_launcher_background</item>'
+          );
+        } else {
           stylesContents = stylesContents.replace(
             /<style name="Theme\.App\.SplashScreen" parent="Theme\.SplashScreen">/,
             '<style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">\n    <item name="android:windowBackground">@drawable/ic_launcher_background</item>'
