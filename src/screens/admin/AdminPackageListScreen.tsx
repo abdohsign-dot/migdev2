@@ -238,6 +238,8 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   };
 
   const sortedPackages = React.useMemo(() => {
+    const now = Date.now();
+
     return [...filteredPackages].sort((a: any, b: any) => {
       const aIsActive = ['Pending', 'Assigned', 'In Transit'].includes(a.status);
       const bIsActive = ['Pending', 'Assigned', 'In Transit'].includes(b.status);
@@ -249,17 +251,46 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       const aMs = getDeadlineMillis(a);
       const bMs = getDeadlineMillis(b);
 
-      // 2. Tie-breaker and deadline availability sorting within groups
-      if (aMs === null && bMs === null) {
-        const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return aCreated - bCreated;
-      }
-      if (aMs === null) return 1;
-      if (bMs === null) return -1;
+      if (aIsActive) {
+        // Active package category priority:
+        // Cat 1: On-time (deadline in future: diff > 0)
+        // Cat 2: Overdue (en retard: diff <= 0)
+        // Cat 3: No deadline
+        const getCategory = (ms: number | null) => {
+          if (ms === null) return 3;
+          return ms > now ? 1 : 2;
+        };
 
-      // 3. Sort by deadline asc (earliest/most upcoming deadline first)
-      return aMs - bMs;
+        const catA = getCategory(aMs);
+        const catB = getCategory(bMs);
+
+        if (catA !== catB) {
+          return catA - catB;
+        }
+
+        if (catA === 1) {
+          // On-time: closest deadline first (ascending)
+          return (aMs || 0) - (bMs || 0);
+        } else if (catA === 2) {
+          // Overdue: most recently overdue first (descending)
+          return (bMs || 0) - (aMs || 0);
+        } else {
+          // No deadline: order by creation timestamp
+          const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return aCreated - bCreated;
+        }
+      } else {
+        // Completed/final packages: sort by deadline if available (latest first)
+        if (aMs === null && bMs === null) {
+          const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return bCreated - aCreated;
+        }
+        if (aMs === null) return 1;
+        if (bMs === null) return -1;
+        return bMs - aMs;
+      }
     });
   }, [filteredPackages]);
 
@@ -633,6 +664,42 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   //
   // Therefore, no Supabase listener/fetch is used for this modal.
 
+  const getDeadlineStyleAndText = (pkg: any) => {
+    if (!pkg?.limit_date) return null;
+
+    const deadlineMs = getDeadlineMillis(pkg);
+    if (!deadlineMs) return null;
+
+    const now = Date.now();
+    const diffMs = deadlineMs - now;
+
+    const datePart = String(pkg.limit_date);
+    const timePart = pkg.limit_time ? String(pkg.limit_time) : '';
+    
+    const displayDate = datePart.includes('-') 
+      ? datePart.split('-').reverse().join('/') 
+      : datePart;
+    const displayText = `⌛ Limite: ${displayDate}${timePart ? ` à ${timePart}` : ''}`;
+
+    const isActive = ['Pending', 'Assigned', 'In Transit'].includes(pkg.status);
+    if (!isActive) {
+      return { text: displayText, color: '#9CA3AF', isCritical: false };
+    }
+
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+    const oneHourMs = 1 * 60 * 60 * 1000;
+
+    if (diffMs <= 0) {
+      return { text: `⚠️ En retard: ${displayDate}${timePart ? ` à ${timePart}` : ''}`, color: '#EF4444', isCritical: true };
+    } else if (diffMs <= oneHourMs) {
+      return { text: displayText, color: '#EF4444', isCritical: true };
+    } else if (diffMs <= twoHoursMs) {
+      return { text: displayText, color: '#F97316', isCritical: true };
+    }
+
+    return { text: displayText, color: '#4B5563', isCritical: false };
+  };
+
   const renderTableRow = ({ item }: { item: any }) => (
     <View style={styles.tableRow}>
       <TouchableOpacity onPress={() => toggleSelection(item.id)} style={styles.checkbox}>
@@ -651,6 +718,22 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
         <View style={styles.pkgInfo}>
           <Text style={styles.pkgNumber} numberOfLines={1} ellipsizeMode="clip">{item.ref_number}</Text>
           <Text style={styles.pkgSubtitle} numberOfLines={1}>{item.description || 'Pas de description'}</Text>
+          {(() => {
+            const deadlineInfo = getDeadlineStyleAndText(item);
+            if (!deadlineInfo) return null;
+            return (
+              <Text 
+                style={[
+                  styles.deadlineText, 
+                  { color: deadlineInfo.color },
+                  deadlineInfo.isCritical && styles.criticalDeadlineText
+                ]}
+                numberOfLines={1}
+              >
+                {deadlineInfo.text}
+              </Text>
+            );
+          })()}
         </View>
       </TouchableOpacity>
       <Text style={styles.cellCustomer} numberOfLines={1}>{item.customer_name}</Text>
@@ -1682,6 +1765,8 @@ const styles = StyleSheet.create({
   pkgInfo: { flex: 1, marginRight: 8 },
   pkgNumber: { fontWeight: '700', fontSize: 13, color: '#111827' },
   pkgSubtitle: { fontSize: 11, color: '#6B7280', marginTop: 2 },
+  deadlineText: { fontSize: 10.5, marginTop: 3, fontWeight: '500' },
+  criticalDeadlineText: { fontWeight: '700' },
   pkgActionButtons: { flexDirection: 'row', alignItems: 'center' },
   cellCustomer: { flex: 2, fontSize: 14 },
   cellPrice: { flex: 1, fontWeight: '600', textAlign: 'center', fontSize: 14 },
