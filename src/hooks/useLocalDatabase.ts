@@ -82,7 +82,8 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const checkSyncQueue = useCallback(async () => {
     try {
       const queue = await getSyncQueue(driverId);
-      setPendingSyncCount(queue.length);
+      const unsynced = queue.filter(op => !op.synced);
+      setPendingSyncCount(unsynced.length);
     } catch (error) {
       console.error('Error checking sync queue:', error);
     }

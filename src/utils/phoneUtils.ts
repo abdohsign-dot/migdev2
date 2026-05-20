@@ -15,21 +15,27 @@ export const formatPhoneForWhatsApp = (phone: string): string => {
   if (!phone) return '';
 
   // 1. Remove all non-digit characters
-  const cleanPhone = phone.replace(/[^0-9]/g, '');
+  let cleanPhone = phone.replace(/[^0-9]/g, '');
   
-  // 2. Handle Moroccan mobile numbers starting with 06 or 07
-  // If the original string starts with 06 or 07 (ignoring symbols)
-  // or if the cleaned string starts with 06 or 07
-  if (phone.trim().startsWith('06') || phone.trim().startsWith('07')) {
-    return `212${cleanPhone.substring(1)}`;
+  // 2. If it starts with "21206" or "21207" (redundant 0 with country code), strip the '0'
+  if (cleanPhone.startsWith('21206') || cleanPhone.startsWith('21207')) {
+    cleanPhone = '212' + cleanPhone.substring(4);
+  }
+  
+  // 3. If it starts with "06" or "07" (local format)
+  else if (cleanPhone.startsWith('06') || cleanPhone.startsWith('07')) {
+    cleanPhone = '212' + cleanPhone.substring(1);
+  }
+  
+  // 4. If it is 9 digits starting with "6" or "7" (missing country code and leading 0)
+  else if (cleanPhone.length === 9 && (cleanPhone.startsWith('6') || cleanPhone.startsWith('7'))) {
+    cleanPhone = '212' + cleanPhone;
+  }
+  
+  // 5. General fallback: if it starts with "0", strip it and prepend "212"
+  else if (cleanPhone.startsWith('0')) {
+    cleanPhone = '212' + cleanPhone.substring(1);
   }
 
-  // 3. If it's already a full international number (e.g. starts with 212)
-  // we assume it's already correct.
-  
-  // 4. Fallback: if it starts with 0 but not 06/07, it might be a fixed line or other
-  // If user wants +212 for all 0... numbers, we could generalize, 
-  // but they specifically mentioned 06/07.
-  
   return cleanPhone;
 };

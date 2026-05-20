@@ -29,7 +29,8 @@ export default function SyncStatusBanner() {
       try {
         const queryDriverId = userRole === 'deliverer' ? (driverId || undefined) : undefined;
         const queue = await getSyncQueue(queryDriverId);
-        setPendingCount(queue.length);
+        const unsyncedCount = queue.filter(op => !op.synced).length;
+        setPendingCount(unsyncedCount);
       } catch (e) {
         // Silent catch to prevent UI loops
       }

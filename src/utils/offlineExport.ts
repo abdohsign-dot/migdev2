@@ -331,13 +331,15 @@ Total colis: ${packages.length}
     .filter(p => p.status === 'Delivered' && !p.is_paid)
     .reduce((sum, p) => sum + (p.price || 0), 0);
 
+  const acceptedPackages = packages.filter(p => p.status !== 'Pending' && p.status !== 'Assigned');
+
   report += `\n${'═'.repeat(60)}\n`;
   report += `RÉSUMÉ FINANCIER\n`;
   report += `${'═'.repeat(60)}\n`;
   report += `Cash collecté (COD): ${totalCash.toFixed(2)} DH\n`;
-  report += `Colis payés: ${packages.filter(p => p.is_paid).length}\n`;
-  report += `Colis COD: ${packages.filter(p => !p.is_paid).length}\n`;
-  report += `\nRevenu total: ${packages.reduce((sum, p) => sum + (p.price || 0), 0).toFixed(2)} DH\n`;
+  report += `Colis payés: ${acceptedPackages.filter(p => p.is_paid).length}\n`;
+  report += `Colis COD: ${acceptedPackages.filter(p => !p.is_paid).length}\n`;
+  report += `\nRevenu total: ${acceptedPackages.reduce((sum, p) => sum + (p.price || 0), 0).toFixed(2)} DH\n`;
 
   return report;
 };
@@ -376,6 +378,37 @@ export const generateJSON = (packages: Package[]): string => {
 // ============================================
 
 /**
+ * Encodes string to UTF-8 safe base64
+ */
+const toBase64 = (str: string): string => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const bytes = [];
+  const utf8 = unescape(encodeURIComponent(str));
+  for (let i = 0; i < utf8.length; i++) {
+    bytes.push(utf8.charCodeAt(i));
+  }
+  
+  let result = '';
+  let i = 0;
+  while (i < bytes.length) {
+    const b1 = bytes[i++];
+    const b2 = i < bytes.length ? bytes[i++] : NaN;
+    const b3 = i < bytes.length ? bytes[i++] : NaN;
+    
+    const enc1 = b1 >> 2;
+    const enc2 = ((b1 & 3) << 4) | (Number.isNaN(b2) ? 0 : b2 >> 4);
+    const enc3 = Number.isNaN(b2) ? 64 : ((b2 & 15) << 2) | (Number.isNaN(b3) ? 0 : b3 >> 6);
+    const enc4 = Number.isNaN(b3) ? 64 : b3 & 63;
+    
+    result += chars.charAt(enc1) +
+              chars.charAt(enc2) +
+              (enc3 === 64 ? '=' : chars.charAt(enc3)) +
+              (enc4 === 64 ? '=' : chars.charAt(enc4));
+  }
+  return result;
+};
+
+/**
  * Export via WhatsApp
  */
 export const exportViaWhatsApp = async (packages: Package[], driverName?: string): Promise<void> => {
@@ -409,15 +442,20 @@ export const exportAsCSV = async (packages: Package[], driverName?: string): Pro
   try {
     const csv = generateCSV(packages);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `livraisons_${driverName || 'driver'}_${timestamp}.csv`;
+    const safeDriverName = (driverName || 'driver').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_');
+    const filename = `livraisons_${safeDriverName}_${timestamp}.csv`;
     const path = `${RNFS.DocumentDirectoryPath}/${filename}`;
     
-    // Write file
+    // Write local backup file
     await RNFS.writeFile(path, csv, 'utf8');
     
-    // Share file
+    // Convert to base64
+    const base64Data = toBase64(csv);
+    
+    // Share file via base64
     await Share.open({
-      url: Platform.OS === 'android' ? `file://${path}` : path,
+      url: `data:text/csv;base64,${base64Data}`,
+      filename: filename,
       type: 'text/csv',
       title: 'Exporter le rapport',
       subject: `Rapport de livraison - ${driverName || 'Driver'}`,
@@ -435,15 +473,20 @@ export const exportAsTextReport = async (packages: Package[], driverName?: strin
   try {
     const report = generateDetailedReport(packages, driverName);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `rapport_${driverName || 'driver'}_${timestamp}.txt`;
+    const safeDriverName = (driverName || 'driver').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_');
+    const filename = `rapport_${safeDriverName}_${timestamp}.txt`;
     const path = `${RNFS.DocumentDirectoryPath}/${filename}`;
     
-    // Write file
+    // Write local backup file
     await RNFS.writeFile(path, report, 'utf8');
     
-    // Share file
+    // Convert to base64
+    const base64Data = toBase64(report);
+    
+    // Share file via base64
     await Share.open({
-      url: Platform.OS === 'android' ? `file://${path}` : path,
+      url: `data:text/plain;base64,${base64Data}`,
+      filename: filename,
       type: 'text/plain',
       title: 'Exporter le rapport détaillé',
       subject: `Rapport détaillé - ${driverName || 'Driver'}`,
@@ -461,15 +504,20 @@ export const exportAsJSON = async (packages: Package[], driverName?: string): Pr
   try {
     const json = generateJSON(packages);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `backup_${driverName || 'driver'}_${timestamp}.json`;
+    const safeDriverName = (driverName || 'driver').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_');
+    const filename = `backup_${safeDriverName}_${timestamp}.json`;
     const path = `${RNFS.DocumentDirectoryPath}/${filename}`;
     
-    // Write file
+    // Write local backup file
     await RNFS.writeFile(path, json, 'utf8');
     
-    // Share file
+    // Convert to base64
+    const base64Data = toBase64(json);
+    
+    // Share file via base64
     await Share.open({
-      url: Platform.OS === 'android' ? `file://${path}` : path,
+      url: `data:application/json;base64,${base64Data}`,
+      filename: filename,
       type: 'application/json',
       title: 'Exporter la sauvegarde',
       subject: `Sauvegarde - ${driverName || 'Driver'}`,

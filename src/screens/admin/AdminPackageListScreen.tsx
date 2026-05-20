@@ -306,6 +306,13 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       .reduce((sum, pkg: any) => sum + (pkg.price || 0), 0);
   }, [filteredPackages]);
 
+  // Sum of prices of delivered COD (unpaid) packages in the filtered list
+  const filteredCashToCollect = React.useMemo(() => {
+    return filteredPackages
+      .filter((p: any) => p.status === 'Delivered' && !p.is_paid)
+      .reduce((sum, pkg: any) => sum + (pkg.price || 0), 0);
+  }, [filteredPackages]);
+
   const toggleSelection = (pkgId: string) => {
     setSelectedPackageIds(prev => {
       const newSet = new Set(prev);
@@ -868,10 +875,21 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
                   <Text style={styles.financeStatLabel}>Valeur Totale (Filtres)</Text>
                   <Text style={styles.financeStatValue}>{filteredTotalPrice.toFixed(2)} DH</Text>
                 </View>
+                
+                {filterDriverId !== 'all' && (
+                  <>
+                    <View style={styles.financeStatDivider} />
+                    <View style={styles.financeStatBox}>
+                      <Text style={[styles.financeStatLabel, { color: '#047857' }]}>Cash COD (à Collecter)</Text>
+                      <Text style={[styles.financeStatValue, { color: '#059669' }]}>{filteredCashToCollect.toFixed(2)} DH</Text>
+                    </View>
+                  </>
+                )}
+                
                 <View style={styles.financeStatDivider} />
                 <View style={[styles.financeStatBox, { alignItems: 'flex-end' }]}>
-                  <Text style={[styles.financeStatLabel, { color: '#047857' }]}>Montant Livré (Encaissé)</Text>
-                  <Text style={[styles.financeStatValue, { color: '#059669' }]}>{filteredDeliveredPrice.toFixed(2)} DH</Text>
+                  <Text style={styles.financeStatLabel}>Montant Livré (Total)</Text>
+                  <Text style={styles.financeStatValue}>{filteredDeliveredPrice.toFixed(2)} DH</Text>
                 </View>
               </View>
 

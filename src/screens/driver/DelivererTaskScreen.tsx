@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ToastAndroid, Linking, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ToastAndroid, Linking, Platform, ScrollView, Clipboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import PackageCard from '../../components/PackageCard';
 import useAuthStore from '../../store/useAuthStore';
@@ -42,6 +42,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
   // Use local database hook - drivers only sync their packages
   const {
     packages: localPackages,
+    drivers,
     loading,
     syncing,
     lastSync,
@@ -166,11 +167,15 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       )
     : packages;
 
-  // Calculate total price for all packages (not filtered)
-  const totalPrice = packages.reduce((sum, pkg) => sum + (pkg.price || 0), 0);
+  // Calculate total price for all accepted packages (not filtered)
+  const totalPrice = packages
+    .filter(p => p.status !== 'Pending' && p.status !== 'Assigned')
+    .reduce((sum, pkg) => sum + (pkg.price || 0), 0);
 
-  // Calculate total price for visible packages (filtered)
-  const visibleTotalPrice = filteredPackages.reduce((sum, pkg) => sum + (pkg.price || 0), 0);
+  // Calculate total price for visible accepted packages (filtered)
+  const visibleTotalPrice = filteredPackages
+    .filter(p => p.status !== 'Pending' && p.status !== 'Assigned')
+    .reduce((sum, pkg) => sum + (pkg.price || 0), 0);
 
   // Count completed tasks
   const completedTasksCount = packages.filter(p => 
@@ -294,6 +299,14 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
         Alert.alert("Erreur", "Impossible d'ouvrir WhatsApp");
       }
     }
+  };
+
+  // Copy to clipboard helper
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return;
+    Clipboard.setString(text);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    ToastAndroid.show(`${label} copié !`, ToastAndroid.SHORT);
   };
 
   // GPS/Maps functionality
@@ -686,9 +699,15 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       return;
     }
 
+    // Retrieve name and zone for better display in reports
+    const matchedDriver = drivers.find(d => d.id === driverId);
+    const driverDisplayName = matchedDriver 
+      ? `${matchedDriver.name}${matchedDriver.zone ? ` (${matchedDriver.zone})` : ''}` 
+      : `Driver_${driverId}`;
+
     // Show export options (WhatsApp + CSV only)
     // offlineExport.ts still supports Email, but DelivererTaskScreen limits the UI options.
-    showExportOptions(packages, `Driver_${driverId}`, undefined);
+    showExportOptions(packages, driverDisplayName, undefined);
   };
 
   // Cash to collect (Only counts delivered packages)
@@ -823,8 +842,8 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Revenu Total</Text>
-              <Text style={styles.statValue}>{deliveredRevenue.toFixed(2)} DH</Text>
+              <Text style={styles.statLabel}>Montant Dû (COD)</Text>
+              <Text style={styles.statValue}>{cashToCollect.toFixed(2)} DH</Text>
             </View>
           </View>
         </View>
@@ -933,9 +952,19 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
                       <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Téléphone 1:</Text>
                         <View style={styles.phoneRow}>
-                          <Text style={styles.phoneValue}>
-                            {item.customer_phone || 'Non spécifié'}
-                          </Text>
+                          {item.customer_phone ? (
+                            <TouchableOpacity 
+                              onPress={() => copyToClipboard(item.customer_phone!, 'Numéro de téléphone')}
+                              style={styles.clickablePhoneContainer}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.phoneValue, styles.clickablePhone]}>
+                                {item.customer_phone} 📋
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <Text style={styles.phoneValue}>Non spécifié</Text>
+                          )}
                           {item.customer_phone && (
                             <View style={styles.phoneButtons}>
                               <TouchableOpacity 
@@ -960,9 +989,15 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
                         <View style={styles.detailRow}>
                           <Text style={styles.detailLabel}>Téléphone 2:</Text>
                           <View style={styles.phoneRow}>
-                            <Text style={styles.phoneValue}>
-                              {item.customer_phone_2}
-                            </Text>
+                            <TouchableOpacity 
+                              onPress={() => copyToClipboard(item.customer_phone_2!, 'Deuxième numéro')}
+                              style={styles.clickablePhoneContainer}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.phoneValue, styles.clickablePhone]}>
+                                {item.customer_phone_2} 📋
+                              </Text>
+                            </TouchableOpacity>
                             <View style={styles.phoneButtons}>
                               <TouchableOpacity 
                                 style={styles.callBtn} 
@@ -1054,12 +1089,23 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       {packages.length > 0 && (
         <View style={styles.totalPriceContainer}>
           <View style={styles.totalPriceRow}>
-            <Text style={styles.totalPriceLabel}>
-              Total {hideCompletedTasks ? 'Visible' : 'Tous'} Colis:
-            </Text>
-            <Text style={styles.totalPriceValue}>
-              {hideCompletedTasks ? visibleTotalPrice.toFixed(2) : totalPrice.toFixed(2)} DH
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.totalPriceLabel}>
+                Total {hideCompletedTasks ? 'Visible' : 'Tous'} Colis:
+              </Text>
+              <Text style={styles.totalPriceValue}>
+                {hideCompletedTasks ? visibleTotalPrice.toFixed(2) : totalPrice.toFixed(2)} DH
+              </Text>
+            </View>
+            <View style={{ width: 1, height: '100%', backgroundColor: '#F3F4F6', marginHorizontal: 12 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.totalPriceLabel, { color: '#047857' }]}>
+                Montant Dû (COD):
+              </Text>
+              <Text style={[styles.totalPriceValue, { color: '#059669' }]}>
+                {cashToCollect.toFixed(2)} DH
+              </Text>
+            </View>
           </View>
         </View>
       )}
@@ -1479,6 +1525,13 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'left',
     flexWrap: 'wrap',
+  },
+  clickablePhoneContainer: {
+    flex: 1,
+  },
+  clickablePhone: {
+    color: '#2563EB',
+    textDecorationLine: 'underline',
   },
   phoneButtons: {
     flexDirection: 'row',
