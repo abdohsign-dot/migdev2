@@ -167,15 +167,11 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       )
     : packages;
 
-  // Calculate total price for all accepted packages (not filtered)
-  const totalPrice = packages
-    .filter(p => p.status !== 'Pending' && p.status !== 'Assigned')
-    .reduce((sum, pkg) => sum + (pkg.price || 0), 0);
+  // Calculate total price for all packages (not filtered)
+  const totalPrice = packages.reduce((sum, pkg) => sum + (pkg.price || 0), 0);
 
-  // Calculate total price for visible accepted packages (filtered)
-  const visibleTotalPrice = filteredPackages
-    .filter(p => p.status !== 'Pending' && p.status !== 'Assigned')
-    .reduce((sum, pkg) => sum + (pkg.price || 0), 0);
+  // Calculate total price for visible packages (filtered)
+  const visibleTotalPrice = filteredPackages.reduce((sum, pkg) => sum + (pkg.price || 0), 0);
 
   // Count completed tasks
   const completedTasksCount = packages.filter(p => 
