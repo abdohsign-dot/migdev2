@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, ToastAndroid, Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useAuthStore from '../../store/useAuthStore';
 import { LoginScreenProps } from '../../types/navigation';
 
@@ -23,6 +23,7 @@ import {
 } from '../../utils/responsive';
 
 export default function LoginScreen({ navigation }: LoginScreenProps) {
+  const insets = useSafeAreaInsets();
   const [driverId, setDriverId] = useState('');
   const [driverPin, setDriverPin] = useState('');
   const [driverError, setDriverError] = useState('');
@@ -231,7 +232,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
         
         {/* Hidden Admin Gear Icon - Requires 3 taps */}
@@ -337,7 +338,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
         </Modal>
 
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

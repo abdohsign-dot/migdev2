@@ -5,26 +5,21 @@
  * Supports phones, tablets, and various screen orientations.
  */
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Dimensions, Platform } from 'react-native';
 
-// Get current device dimensions
-const { width, height } = Dimensions.get('window');
-
-// Device type detection
-export const deviceType = {
-  isPhone: width < 768,
-  isTablet: width >= 768,
-  isSmallPhone: width < 375,
-  isLargePhone: width >= 375 && width < 768,
-  isSmallTablet: width >= 768 && width < 1024,
-  isLargeTablet: width >= 1024,
+type DeviceType = {
+  isPhone: boolean;
+  isTablet: boolean;
+  isSmallPhone: boolean;
+  isLargePhone: boolean;
+  isSmallTablet: boolean;
+  isLargeTablet: boolean;
 };
 
-// Orientation detection
-export const orientation = {
-  isPortrait: height >= width,
-  isLandscape: width > height,
+type Orientation = {
+  isPortrait: boolean;
+  isLandscape: boolean;
 };
 
 // Breakpoint constants
@@ -36,7 +31,68 @@ export const BREAKPOINTS = {
   DESKTOP: 1200,
 };
 
-// Responsive spacing
+// Hook for live responsive values (fixes rotation issues).
+export const useResponsiveDimensions = () => {
+  const [dimensions, setDimensions] = useState(() => {
+    const { width: w, height: h } = Dimensions.get('window');
+    return { width: w, height: h };
+  });
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions({ width: window.width, height: window.height });
+    });
+
+    return () => subscription?.remove?.();
+  }, []);
+
+  const orientation: Orientation = useMemo(
+    () => ({
+      isPortrait: dimensions.height >= dimensions.width,
+      isLandscape: dimensions.width > dimensions.height,
+    }),
+    [dimensions.height, dimensions.width]
+  );
+
+  const deviceType: DeviceType = useMemo(
+    () => ({
+      isPhone: dimensions.width < BREAKPOINTS.LARGE_PHONE,
+      isTablet: dimensions.width >= BREAKPOINTS.LARGE_PHONE,
+      isSmallPhone: dimensions.width < BREAKPOINTS.SMALL_PHONE,
+      isLargePhone:
+        dimensions.width >= BREAKPOINTS.SMALL_PHONE && dimensions.width < BREAKPOINTS.LARGE_PHONE,
+      isSmallTablet: dimensions.width >= BREAKPOINTS.SMALL_TABLET && dimensions.width < BREAKPOINTS.LARGE_TABLET,
+      isLargeTablet: dimensions.width >= BREAKPOINTS.LARGE_TABLET,
+    }),
+    [dimensions.width]
+  );
+
+  return {
+    ...dimensions,
+    ...deviceType,
+    ...orientation,
+  };
+};
+
+// Backward-compatible computed exports (use initial window dimensions; kept for existing imports).
+// Prefer using the hook-based values in new/updated components.
+const { width: INITIAL_WIDTH, height: INITIAL_HEIGHT } = Dimensions.get('window');
+
+export const orientation: Orientation = {
+  isPortrait: INITIAL_HEIGHT >= INITIAL_WIDTH,
+  isLandscape: INITIAL_WIDTH > INITIAL_HEIGHT,
+};
+
+export const deviceType: DeviceType = {
+  isPhone: INITIAL_WIDTH < BREAKPOINTS.LARGE_PHONE,
+  isTablet: INITIAL_WIDTH >= BREAKPOINTS.LARGE_PHONE,
+  isSmallPhone: INITIAL_WIDTH < BREAKPOINTS.SMALL_PHONE,
+  isLargePhone: INITIAL_WIDTH >= BREAKPOINTS.SMALL_PHONE && INITIAL_WIDTH < BREAKPOINTS.LARGE_PHONE,
+  isSmallTablet: INITIAL_WIDTH >= BREAKPOINTS.SMALL_TABLET && INITIAL_WIDTH < BREAKPOINTS.LARGE_TABLET,
+  isLargeTablet: INITIAL_WIDTH >= BREAKPOINTS.LARGE_TABLET,
+};
+
+// Responsive spacing (static defaults; new screens should derive from hook + local tokens)
 export const SPACING = {
   xs: 4,
   sm: 8,
@@ -44,7 +100,6 @@ export const SPACING = {
   lg: 24,
   xl: 32,
   xxl: 48,
-  // Responsive spacing
   responsive: {
     paddingHorizontal: deviceType.isTablet ? 32 : 24,
     paddingVertical: deviceType.isTablet ? 24 : 16,
@@ -289,24 +344,5 @@ export const Responsive = {
   responsivePadding,
   responsiveMargin,
   PLATFORM,
-};
-
-// Hook for responsive updates (if needed in future)
-export const useResponsiveDimensions = () => {
-  const [dimensions, setDimensions] = useState({ width, height });
-  
-  useEffect(() => {
-    const subscription = Dimensions.addEventListener('change', ({ window }) => {
-      setDimensions({ width: window.width, height: window.height });
-    });
-    
-    return () => subscription?.remove();
-  }, []);
-  
-  return {
-    width: dimensions.width,
-    height: dimensions.height,
-    isPortrait: dimensions.height >= dimensions.width,
-    isLandscape: dimensions.width > dimensions.height,
-  };
+  useResponsiveDimensions,
 };

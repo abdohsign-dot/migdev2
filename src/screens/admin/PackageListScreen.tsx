@@ -10,12 +10,14 @@ import { QRCodeComponent } from '../../components/QRCodeComponent';
 import { extractQRData, generateQRString } from '../../utils/qrGenerator';
 import { getPackageDisplayRef } from '../../utils/packageUtils';
 import { formatDate } from '../../utils/dateFormatter';
+import { useResponsiveDimensions } from '../../utils/responsive';
 
 interface PackageListScreenProps {
   navigation: any;
 }
 
 export default function PackageListScreen({ navigation }: PackageListScreenProps) {
+  const { isLandscape } = useResponsiveDimensions();
   const [error, setError] = useState<string | null>(null);
   const qrRef = useRef<any>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -184,36 +186,49 @@ Notes     : ${pkg.description || 'Aucune'}
         </TouchableOpacity>
       </View>
 
-      {/* Status Filter */}
-      <View style={styles.filterBar}>
-        {statusOptions.map(status => (
-          <TouchableOpacity
-            key={status}
-            style={[styles.filterBtn, filterStatus === status && styles.filterBtnActive]}
-            onPress={() => setFilterStatus(status)}
-          >
-            <Text style={[styles.filterText, filterStatus === status && styles.filterTextActive]}>
-              {statusLabels[status]}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Summary */}
-      <View style={styles.summary}>
-        <Text style={styles.summaryText}>
-          Total : <Text style={styles.summaryBold}>{sortedPackages.length}</Text> colis
-        </Text>
-      </View>
-
       {adminLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>
       ) : filteredPackages.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyText}>Aucun colis</Text>
-        </View>
+        <FlatList
+          style={styles.list}
+          data={[]}
+          renderItem={() => null}
+          ListHeaderComponent={
+            <>
+              {/* Status Filter */}
+              <View style={styles.filterBar}>
+                {statusOptions.map(status => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[styles.filterBtn, filterStatus === status && styles.filterBtnActive]}
+                    onPress={() => setFilterStatus(status)}
+                  >
+                    <Text style={[styles.filterText, filterStatus === status && styles.filterTextActive]}>
+                      {statusLabels[status]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Summary */}
+              <View style={styles.summary}>
+                <Text style={styles.summaryText}>
+                  Total : <Text style={styles.summaryBold}>{sortedPackages.length}</Text> colis
+                </Text>
+              </View>
+            </>
+          }
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Text style={styles.emptyText}>Aucun colis</Text>
+            </View>
+          }
+          refreshControl={
+            <RefreshControl refreshing={syncing} onRefresh={refresh} colors={['#3B82F6']} />
+          }
+        />
       ) : (
         <FlatList
           style={styles.list}
@@ -224,6 +239,31 @@ Notes     : ${pkg.description || 'Aucune'}
           initialNumToRender={15}
           maxToRenderPerBatch={10}
           windowSize={5}
+          ListHeaderComponent={
+            <>
+              {/* Status Filter */}
+              <View style={styles.filterBar}>
+                {statusOptions.map(status => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[styles.filterBtn, filterStatus === status && styles.filterBtnActive]}
+                    onPress={() => setFilterStatus(status)}
+                  >
+                    <Text style={[styles.filterText, filterStatus === status && styles.filterTextActive]}>
+                      {statusLabels[status]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Summary */}
+              <View style={styles.summary}>
+                <Text style={styles.summaryText}>
+                  Total : <Text style={styles.summaryBold}>{sortedPackages.length}</Text> colis
+                </Text>
+              </View>
+            </>
+          }
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.packageRow}
@@ -578,5 +618,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
     marginBottom: 12,
+  },
+
+  // Landscape Main Container Layout
+  landscapeMainContainer: {
+    flexDirection: 'row',
+    flex: 1,
+    height: '100%',
+  },
+  portraitMainContainer: {
+    flex: 1,
+  },
+  landscapeSidePanel: {
+    width: '28%',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    backgroundColor: '#fff',
+    height: '100%',
+  },
+  landscapeSidePanelContent: {
+    paddingBottom: 24,
+  },
+  landscapeListContainer: {
+    flex: 1,
+    height: '100%',
+  },
+  portraitListContainer: {
+    flex: 1,
   },
 });

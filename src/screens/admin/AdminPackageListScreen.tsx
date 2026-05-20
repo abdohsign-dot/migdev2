@@ -23,8 +23,10 @@ import useAdminStore from '../../store/useAdminStore';
 import { AdminPackageListScreenProps } from '../../types/navigation';
 import ScannerModal from '../../components/ScannerModal';
 import { formatDateTime as formatDateTimeUtil } from '../../utils/dateFormatter';
+import { useResponsiveDimensions } from '../../utils/responsive';
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
+  const { isLandscape } = useResponsiveDimensions();
   
   const { packages: localPackages, drivers: localDrivers, loading: localLoading, refresh, archivePackages, unarchivePackages, assignPackageToDriver, deletePackages } = useLocalDatabase({ isAdmin: true });
   const adminPackages = useAdminStore((state) => state.packages);
@@ -252,6 +254,7 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
       // Tie-breaker: earlier created_at first
       const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return aCreated - bCreated;
     });
   }, [filteredPackages]);
 
@@ -696,63 +699,197 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
         </TouchableOpacity>
       </View>
 
-      {/* Filters */}
-      <View style={styles.filtersContainer}>
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher colis/client..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          <TouchableOpacity onPress={() => setScannerVisible(true)} style={styles.adminScanBtn}>
-            <Text style={styles.adminScanText}>📷</Text>
-          </TouchableOpacity>
-        </View>
+      <FlatList
+        style={styles.list}
+        data={sortedPackages}
+        keyExtractor={item => item.id}
+        contentContainerStyle={{ ...styles.tableContent, flexGrow: 1 }}
+        ListHeaderComponent={
+          <>
+            {/* Filters */}
+            <View style={styles.filtersContainer}>
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Rechercher colis/client..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                <TouchableOpacity onPress={() => setScannerVisible(true)} style={styles.adminScanBtn}>
+                  <Text style={styles.adminScanText}>📷</Text>
+                </TouchableOpacity>
+              </View>
 
-        <View style={styles.filterRow}>
-          <View style={styles.filterGroup}>
-            <Text style={styles.filterLabel}>Statut</Text>
-            <TouchableOpacity
-              style={styles.picker}
-              onPress={() => setStatusPickerVisible(true)}
-            >
-              <Text style={styles.pickerText}>
-                {statusLabels[filterStatus] || filterStatus}
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.filterRow}>
+                <View style={styles.filterGroup}>
+                  <Text style={styles.filterLabel}>Statut</Text>
+                  <TouchableOpacity
+                    style={styles.picker}
+                    onPress={() => setStatusPickerVisible(true)}
+                  >
+                    <Text style={styles.pickerText}>
+                      {statusLabels[filterStatus] || filterStatus}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-          <View style={styles.filterGroup}>
-            <Text style={styles.filterLabel}>Date</Text>
-            <TouchableOpacity
-              style={styles.picker}
-              onPress={() => setDatePickerVisible(true)}
-            >
-              <Text style={styles.pickerText}>
-                {filterDate === 'all' ? 'Toutes' : filterDate === 'today' ? "Aujourd'hui" : 'Cette semaine'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <View style={styles.filterGroup}>
+                  <Text style={styles.filterLabel}>Date</Text>
+                  <TouchableOpacity
+                    style={styles.picker}
+                    onPress={() => setDatePickerVisible(true)}
+                  >
+                    <Text style={styles.pickerText}>
+                      {filterDate === 'all' ? 'Toutes' : filterDate === 'today' ? "Aujourd'hui" : 'Cette semaine'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-          <View style={styles.filterGroup}>
-            <Text style={styles.filterLabel}>Chauffeurs</Text>
-            <TouchableOpacity
-              style={styles.picker}
-              onPress={() => setDriverPickerVisible(true)}
-            >
-              <Text style={styles.pickerText}>
-                {filterDriverId === 'all'
-                  ? 'Tous'
-                  : (() => {
-                      const driver = adminDrivers.find((d: any) => d.id === filterDriverId);
-                      return driver ? driver.name : '—';
-                    })()}
-              </Text>
-            </TouchableOpacity>
+                <View style={styles.filterGroup}>
+                  <Text style={styles.filterLabel}>Chauffeurs</Text>
+                  <TouchableOpacity
+                    style={styles.picker}
+                    onPress={() => setDriverPickerVisible(true)}
+                  >
+                    <Text style={styles.pickerText}>
+                      {filterDriverId === 'all'
+                        ? 'Tous'
+                        : (() => {
+                            const driver = adminDrivers.find((d: any) => d.id === filterDriverId);
+                            return driver ? driver.name : '—';
+                          })()}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            {/* Summary & Bulk Controls */}
+            <View style={styles.summaryContainer}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryText}>
+                  Total: <Text style={styles.summaryBold}>{sortedPackages.length}</Text> colis
+                  {selectedPackageIds.size > 0 && (
+                    <Text> · Sélection: <Text style={styles.summaryBold}>{selectedPackageIds.size}</Text></Text>
+                  )}
+                </Text>
+              </View>
+
+              <View style={styles.financeStatsRow}>
+                <View style={styles.financeStatBox}>
+                  <Text style={styles.financeStatLabel}>Valeur Totale (Filtres)</Text>
+                  <Text style={styles.financeStatValue}>{filteredTotalPrice.toFixed(2)} DH</Text>
+                </View>
+                <View style={styles.financeStatDivider} />
+                <View style={[styles.financeStatBox, { alignItems: 'flex-end' }]}>
+                  <Text style={[styles.financeStatLabel, { color: '#047857' }]}>Montant Livré (Encaissé)</Text>
+                  <Text style={[styles.financeStatValue, { color: '#059669' }]}>{filteredDeliveredPrice.toFixed(2)} DH</Text>
+                </View>
+              </View>
+
+              <View style={styles.bulkControls}>
+                {selectedPackageIds.size > 0 && (
+                  <>
+                    {!showArchived ? (
+                      <>
+                        {selectedHasAssigned ? (
+                          <TouchableOpacity
+                            style={[styles.bulkAssignBtn, { backgroundColor: '#EF4444' }]}
+                            onPress={openBulkDeassignModal}
+                            disabled={bulkDeassigning}
+                          >
+                            <Text style={[styles.bulkAssignText, { color: '#fff' }]}>Désassigner</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.bulkAssignBtn}
+                            onPress={() => { setBulkAssigning(false); setBulkAssignModalVisible(true); }}
+                            disabled={!adminDrivers.length}
+                          >
+                            <Text style={styles.bulkAssignText}>Assigner</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                          style={[styles.bulkAssignBtn, { backgroundColor: '#8B5CF6' }]}
+                          onPress={() => {
+                            const ids = Array.from(selectedPackageIds);
+                            void archivePackages(ids);
+                            setSelectedPackageIds(new Set());
+                          }}
+                          disabled={selectedPackageIds.size === 0}
+                        >
+                          <Text style={styles.bulkAssignText}>Archiver</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.bulkAssignBtn, { backgroundColor: '#10B981' }]}
+                          onPress={() => {
+                            const ids = Array.from(selectedPackageIds);
+                            void unarchivePackages(ids);
+                            setSelectedPackageIds(new Set());
+                          }}
+                          disabled={selectedPackageIds.size === 0}
+                        >
+                          <Text style={styles.bulkAssignText}>Restaurer</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.bulkAssignBtn, { backgroundColor: '#EF4444' }]}
+                          onPress={() => {
+                            Alert.alert(
+                              'Confirmer la suppression',
+                              `Êtes-vous sûr de vouloir supprimer ${selectedPackageIds.size} colis archivé(s) de manière permanente?\n\nCette action ne peut pas être annulée.`,
+                              [
+                                { text: 'Annuler', style: 'cancel' },
+                                {
+                                  text: 'Supprimer',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    try {
+                                      const ids = Array.from(selectedPackageIds);
+                                      await deletePackages(ids);
+                                      setSelectedPackageIds(new Set());
+                                      Alert.alert('Succès', `${ids.length} colis supprimé(s) avec succès`);
+                                    } catch (error: any) {
+                                      Alert.alert('Erreur', error?.message || 'Impossible de supprimer les colis');
+                                    }
+                                  }
+                                }
+                              ]
+                            );
+                          }}
+                          disabled={selectedPackageIds.size === 0}
+                        >
+                          <Text style={styles.bulkAssignText}>Supprimer</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* Table Header */}
+            {renderTableHeader()}
+          </>
+        }
+        renderItem={renderTableRow}
+        removeClippedSubviews={false}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>Aucun colis trouvé</Text>
           </View>
-        </View>
-      </View>
+        }
+      />
 
       {/* Status Picker Modal */}
       <Modal visible={statusPickerVisible} transparent animationType="fade">
@@ -896,136 +1033,6 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
           </View>
         </View>
       </Modal>
-
-      {/* Summary & Bulk Controls */}
-      <View style={styles.summaryContainer}>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryText}>
-            Total: <Text style={styles.summaryBold}>{sortedPackages.length}</Text> colis
-            {selectedPackageIds.size > 0 && (
-              <Text> · Sélection: <Text style={styles.summaryBold}>{selectedPackageIds.size}</Text></Text>
-            )}
-          </Text>
-        </View>
-
-        <View style={styles.financeStatsRow}>
-          <View style={styles.financeStatBox}>
-            <Text style={styles.financeStatLabel}>Valeur Totale (Filtres)</Text>
-            <Text style={styles.financeStatValue}>{filteredTotalPrice.toFixed(2)} DH</Text>
-          </View>
-          <View style={styles.financeStatDivider} />
-          <View style={[styles.financeStatBox, { alignItems: 'flex-end' }]}>
-            <Text style={[styles.financeStatLabel, { color: '#047857' }]}>Montant Livré (Encaissé)</Text>
-            <Text style={[styles.financeStatValue, { color: '#059669' }]}>{filteredDeliveredPrice.toFixed(2)} DH</Text>
-          </View>
-        </View>
-
-        <View style={styles.bulkControls}>
-          {selectedPackageIds.size > 0 && (
-            <>
-              {!showArchived ? (
-                <>
-                  {selectedHasAssigned ? (
-                    <TouchableOpacity
-                      style={[styles.bulkAssignBtn, { backgroundColor: '#EF4444' }]}
-                      onPress={openBulkDeassignModal}
-                      disabled={bulkDeassigning}
-                    >
-                      <Text style={[styles.bulkAssignText, { color: '#fff' }]}>Désassigner</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.bulkAssignBtn}
-                      onPress={() => { setBulkAssigning(false); setBulkAssignModalVisible(true); }}
-                      disabled={!adminDrivers.length}
-                    >
-                      <Text style={styles.bulkAssignText}>Assigner</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  <TouchableOpacity
-                    style={[styles.bulkAssignBtn, { backgroundColor: '#8B5CF6' }]}
-                    onPress={() => {
-                      const ids = Array.from(selectedPackageIds);
-                      void archivePackages(ids);
-                      setSelectedPackageIds(new Set());
-                    }}
-                    disabled={selectedPackageIds.size === 0}
-                  >
-                    <Text style={styles.bulkAssignText}>Archiver</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <TouchableOpacity
-                    style={[styles.bulkAssignBtn, { backgroundColor: '#10B981' }]}
-                    onPress={() => {
-                      const ids = Array.from(selectedPackageIds);
-                      void unarchivePackages(ids);
-                      setSelectedPackageIds(new Set());
-                    }}
-                    disabled={selectedPackageIds.size === 0}
-                  >
-                    <Text style={styles.bulkAssignText}>Restaurer</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.bulkAssignBtn, { backgroundColor: '#EF4444' }]}
-                    onPress={() => {
-                      Alert.alert(
-                        'Confirmer la suppression',
-                        `Êtes-vous sûr de vouloir supprimer ${selectedPackageIds.size} colis archivé(s) de manière permanente?\n\nCette action ne peut pas être annulée.`,
-                        [
-                          { text: 'Annuler', style: 'cancel' },
-                          {
-                            text: 'Supprimer',
-                            style: 'destructive',
-                            onPress: async () => {
-                              try {
-                                const ids = Array.from(selectedPackageIds);
-                                await deletePackages(ids);
-                                setSelectedPackageIds(new Set());
-                                Alert.alert('Succès', `${ids.length} colis supprimé(s) avec succès`);
-                              } catch (error: any) {
-                                Alert.alert('Erreur', error?.message || 'Impossible de supprimer les colis');
-                              }
-                            }
-                          }
-                        ]
-                      );
-                    }}
-                    disabled={selectedPackageIds.size === 0}
-                  >
-                    <Text style={styles.bulkAssignText}>Supprimer</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </>
-          )}
-        </View>
-      </View>
-
-      {/* Table */}
-      <FlatList
-        style={styles.list}
-        data={sortedPackages}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.tableContent}
-        ListHeaderComponent={renderTableHeader}
-        renderItem={renderTableRow}
-        removeClippedSubviews={true}
-        initialNumToRender={12}
-        maxToRenderPerBatch={8}
-        windowSize={5}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>Aucun colis trouvé</Text>
-          </View>
-        }
-      />
 
       {/* Bulk Assign Modal */}
       <Modal visible={bulkAssignModalVisible} transparent animationType="fade">
@@ -1178,7 +1185,16 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
                   <Text style={styles.detailLine}><Text style={styles.detailKey}>Assigné le:</Text> {formatDateTime(selectedPackageForDetails.assigned_at)}</Text>
                   <Text style={styles.detailLine}><Text style={styles.detailKey}>Accepté le:</Text> {formatDateTime(selectedPackageForDetails.accepted_at)}</Text>
-                  <Text style={styles.detailLine}><Text style={styles.detailKey}>Livré le:</Text> {formatDateTime(selectedPackageForDetails.delivered_at)}</Text>
+
+                  {selectedPackageForDetails.status === 'Delivered' && selectedPackageForDetails.delivered_at && (
+                    <Text style={styles.detailLine}><Text style={styles.detailKey}>Livré le:</Text> {formatDateTime(selectedPackageForDetails.delivered_at)}</Text>
+                  )}
+                  {selectedPackageForDetails.status === 'Returned' && selectedPackageForDetails.delivered_at && (
+                    <Text style={styles.detailLine}><Text style={styles.detailKey}>Retourné le:</Text> {formatDateTime(selectedPackageForDetails.delivered_at)}</Text>
+                  )}
+                  {selectedPackageForDetails.status !== 'Delivered' && selectedPackageForDetails.status !== 'Returned' && selectedPackageForDetails.delivered_at && (
+                    <Text style={styles.detailLine}><Text style={styles.detailKey}>Traité le:</Text> {formatDateTime(selectedPackageForDetails.delivered_at)}</Text>
+                  )}
 
                   {selectedPackageForDetails.status === 'Returned' && (
                     <Text style={styles.detailLine}><Text style={styles.detailKey}>Raison du retour:</Text> {selectedPackageForDetails.return_reason || 'Raison non trouvée'}</Text>
@@ -1612,7 +1628,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  list: { flex: 1 },
   tableContent: { padding: 16 },
   tableHeader: {
     flexDirection: 'row',
@@ -1784,5 +1799,35 @@ const styles = StyleSheet.create({
   // Modal subtitle style
   modalSubtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 16 },
 
+  // Ensure FlatList never collapses during rotation/layout passes
+  list: { flex: 1, minHeight: 0 },
+
+  // Landscape Main Container Layout
+  landscapeMainContainer: {
+    flexDirection: 'row',
+    flex: 1,
+    height: '100%',
+  },
+  portraitMainContainer: {
+    flex: 1,
+  },
+  landscapeSidePanel: {
+    width: '28%',
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    backgroundColor: '#fff',
+    height: '100%',
+  },
+  landscapeSidePanelContent: {
+    paddingBottom: 24,
+  },
+  landscapeListContainer: {
+    flex: 1,
+    height: '100%',
+  },
+  portraitListContainer: {
+    flex: 1,
+  },
 });
+
 

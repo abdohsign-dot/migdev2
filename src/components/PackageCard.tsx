@@ -2,15 +2,16 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking, Platform } from 'react-native';
 import { getStatusColor } from '../utils/statusColors';
 import { formatPhoneForWhatsApp } from '../utils/phoneUtils';
-import { 
-  deviceType, 
-  orientation, 
-  SPACING, 
-  FONTS, 
-  RESPONSIVE_SHADOWS, 
+import {
+  deviceType,
+  orientation,
+  SPACING,
+  FONTS,
+  RESPONSIVE_SHADOWS,
   BORDER_RADIUS,
-  responsiveSize 
+  responsiveSize,
 } from '../utils/responsive';
+import { theme } from '../theme';
 
 interface PackageCardProps {
   pkg: {
@@ -245,18 +246,20 @@ export default function PackageCard(props: PackageCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF', 
-    borderRadius: BORDER_RADIUS.responsive.card, 
-    padding: responsiveSize(10, 12), 
+    backgroundColor: theme.colors.background,
+    borderRadius: BORDER_RADIUS.responsive.card,
+    padding: responsiveSize(10, 12),
     marginBottom: responsiveSize(8, 10),
-    borderWidth: 1, 
-    borderColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     ...RESPONSIVE_SHADOWS.card,
     ...Platform.select({
-      ios: orientation.isLandscape && deviceType.isTablet ? {
-        marginHorizontal: SPACING.xs,
-        marginBottom: SPACING.xs,
-      } : {},
+      ios: orientation.isLandscape && deviceType.isTablet
+        ? {
+            marginHorizontal: SPACING.xs,
+            marginBottom: SPACING.xs,
+          }
+        : {},
       android: {},
     }),
   },
@@ -272,53 +275,53 @@ const styles = StyleSheet.create({
       android: {},
     }),
   },
-  refText: { 
-    fontSize: FONTS.compact.small, 
-    fontWeight: '700', 
-    color: '#6B7280' 
+  refText: {
+    fontSize: FONTS.compact.small,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
   },
   statusBadge: { 
     paddingHorizontal: responsiveSize(6, 8), 
     paddingVertical: responsiveSize(2, 3), 
     borderRadius: BORDER_RADIUS.md 
   },
-  statusText: { 
-    color: '#FFFFFF', 
-    fontSize: FONTS.compact.tiny, 
-    fontWeight: '600', 
-    textTransform: 'uppercase' 
+  statusText: {
+    color: theme.colors.background,
+    fontSize: FONTS.compact.tiny,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   body: { 
     marginBottom: responsiveSize(10, 12) 
   },
-  name: { 
-    fontSize: FONTS.compact.subtitle, 
-    fontWeight: '700', 
-    color: '#111827', 
-    marginBottom: SPACING.xs 
+  name: {
+    fontSize: FONTS.compact.subtitle,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginBottom: SPACING.xs,
   },
-  address: { 
-    fontSize: FONTS.compact.caption, 
-    color: '#4B5563', 
-    marginBottom: SPACING.xs 
+  address: {
+    fontSize: FONTS.compact.caption,
+    color: '#4B5563',
+    marginBottom: SPACING.xs,
   },
-  descriptionContainer: { 
-    backgroundColor: '#FEF3C7', 
-    padding: responsiveSize(6, 8), 
-    borderRadius: BORDER_RADIUS.sm, 
+  descriptionContainer: {
+    backgroundColor: '#FEF3C7',
+    padding: responsiveSize(6, 8),
+    borderRadius: BORDER_RADIUS.sm,
     marginBottom: SPACING.xs,
     borderLeftWidth: 2,
-    borderLeftColor: '#F59E0B',
+    borderLeftColor: theme.colors.warning,
   },
-  descriptionLabel: { 
-    fontSize: FONTS.compact.tiny, 
-    fontWeight: '700', 
-    color: '#92400E', 
+  descriptionLabel: {
+    fontSize: FONTS.compact.tiny,
+    fontWeight: '700',
+    color: '#92400E',
     marginBottom: 2,
   },
-  descriptionText: { 
-    fontSize: FONTS.compact.caption, 
-    color: '#78350F', 
+  descriptionText: {
+    fontSize: FONTS.compact.caption,
+    color: '#78350F',
     fontWeight: '500',
     lineHeight: 14,
   },
@@ -328,36 +331,36 @@ const styles = StyleSheet.create({
   date: { fontSize: FONTS.compact.tiny, color: '#9CA3AF', fontStyle: 'italic' },
   reasonText: { fontSize: FONTS.compact.tiny, color: '#EF4444', fontStyle: 'italic', marginTop: 2, fontWeight: '600' },
   phoneSection: { marginTop: SPACING.sm },
-  phoneRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: theme.colors.surfaceMuted,
     paddingVertical: responsiveSize(4, 6),
     paddingHorizontal: responsiveSize(8, 10),
     borderRadius: BORDER_RADIUS.sm,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: theme.colors.border,
   },
-  phoneNumber: { 
-    fontSize: FONTS.compact.body, 
-    fontWeight: '600', 
-    color: '#111827',
+  phoneNumber: {
+    fontSize: FONTS.compact.body,
+    fontWeight: '600',
+    color: theme.colors.text,
     flex: 1,
   },
   phoneActions: { 
     flexDirection: 'row', 
     alignItems: 'center',
   },
-  iconBtn: { 
-    backgroundColor: '#FFFFFF',
+  iconBtn: {
+    backgroundColor: theme.colors.background,
     width: responsiveSize(28, 32),
     height: responsiveSize(28, 32),
     borderRadius: responsiveSize(14, 16),
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: theme.colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -371,13 +374,13 @@ const styles = StyleSheet.create({
   phoneContainer: { flexDirection: 'row', gap: 8, marginTop: 8 },
   phoneBtn: { backgroundColor: '#EFF6FF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   phoneText: { color: '#2563EB', fontSize: 13, fontWeight: '600' },
-  mapBtn: { 
-    backgroundColor: '#10B981', 
-    paddingVertical: responsiveSize(8, 10), 
+  mapBtn: {
+    backgroundColor: theme.colors.mapBg,
+    paddingVertical: responsiveSize(8, 10),
     paddingHorizontal: responsiveSize(10, 12),
-    borderRadius: BORDER_RADIUS.sm, 
+    borderRadius: BORDER_RADIUS.sm,
     marginTop: SPACING.sm,
-    shadowColor: '#10B981',
+    shadowColor: theme.colors.mapBg,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -391,24 +394,75 @@ const styles = StyleSheet.create({
   mapIcon: {
     fontSize: FONTS.compact.body,
   },
-  mapText: { 
-    color: '#FFFFFF', 
-    fontSize: FONTS.compact.caption, 
+  mapText: {
+    color: theme.colors.background,
+    fontSize: FONTS.compact.caption,
     fontWeight: '700',
     marginLeft: SPACING.xs,
   },
-  footer: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: responsiveSize(8, 10), justifyContent: 'space-between' },
-  priceLabel: { fontSize: FONTS.compact.caption, color: '#6B7280', marginRight: SPACING.xs },
-  priceValue: { fontSize: FONTS.compact.subtitle, fontWeight: '800', color: '#111827', marginRight: SPACING.xs },
-  paidBadge: { backgroundColor: '#DEF7EC', paddingHorizontal: responsiveSize(6, 8), paddingVertical: responsiveSize(2, 3), borderRadius: BORDER_RADIUS.sm },
-  paidText: { color: '#03543F', fontSize: FONTS.compact.tiny, fontWeight: '700' },
-  actionsContainer: { flexDirection: 'row', gap: SPACING.xs },
-  actionBtn: { backgroundColor: '#3B82F6', paddingHorizontal: responsiveSize(8, 10), paddingVertical: responsiveSize(6, 8), borderRadius: BORDER_RADIUS.sm },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingTop: responsiveSize(8, 10),
+    justifyContent: 'space-between',
+  },
+  priceLabel: {
+    fontSize: FONTS.compact.caption,
+    color: theme.colors.textMuted,
+    marginRight: SPACING.xs,
+  },
+  priceValue: {
+    fontSize: FONTS.compact.subtitle,
+    fontWeight: '800',
+    color: theme.colors.text,
+    marginRight: SPACING.xs,
+  },
+  paidBadge: {
+    backgroundColor: theme.colors.paidBg,
+    paddingHorizontal: responsiveSize(6, 8),
+    paddingVertical: responsiveSize(2, 3),
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  paidText: {
+    color: theme.colors.paidText,
+    fontSize: FONTS.compact.tiny,
+    fontWeight: '700',
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    maxWidth: '55%',
+  },
+  actionBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: responsiveSize(8, 10),
+    paddingVertical: responsiveSize(6, 8),
+    borderRadius: BORDER_RADIUS.sm,
+  },
   actionBtnDisabled: { backgroundColor: '#9CA3AF', shadowOpacity: 0, elevation: 0 },
-  acceptBtn: { backgroundColor: '#10B981', paddingHorizontal: responsiveSize(8, 10), paddingVertical: responsiveSize(6, 8), borderRadius: BORDER_RADIUS.sm },
-  deliverBtn: { backgroundColor: '#10B981', paddingHorizontal: responsiveSize(8, 10), paddingVertical: responsiveSize(6, 8), borderRadius: BORDER_RADIUS.sm },
-  returnBtn: { backgroundColor: '#EF4444', paddingHorizontal: responsiveSize(8, 10), paddingVertical: responsiveSize(6, 8), borderRadius: BORDER_RADIUS.sm },
-  actionBtnText: { color: '#FFFFFF', fontSize: FONTS.compact.tiny, fontWeight: '700' },
+  acceptBtn: {
+    backgroundColor: theme.colors.success,
+    paddingHorizontal: responsiveSize(8, 10),
+    paddingVertical: responsiveSize(6, 8),
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  deliverBtn: {
+    backgroundColor: theme.colors.success,
+    paddingHorizontal: responsiveSize(8, 10),
+    paddingVertical: responsiveSize(6, 8),
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  returnBtn: {
+    backgroundColor: theme.colors.danger,
+    paddingHorizontal: responsiveSize(8, 10),
+    paddingVertical: responsiveSize(6, 8),
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  actionBtnText: { color: theme.colors.background, fontSize: FONTS.compact.tiny, fontWeight: '700' },
   
   // Assignment section styles
   assignmentSection: { marginTop: SPACING.sm },

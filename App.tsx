@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Button, LogBox, StatusBar } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SplashScreen from 'expo-splash-screen';
+
 import RoleBasedNavigator from './src/navigation/RoleBasedNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
 // AppCheck removed - Firebase App Check no longer needed
@@ -10,7 +10,7 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 /** Minimum time the native splash (launcher image) stays visible on cold start. */
 const MIN_SPLASH_MS = 2000;
 
-SplashScreen.preventAutoHideAsync().catch(() => { });
+
 
 // Suppress minor warnings in production
 LogBox.ignoreLogs([
@@ -98,11 +98,7 @@ export default function App() {
       if (elapsed < MIN_SPLASH_MS) {
         await new Promise((resolve) => setTimeout(resolve, MIN_SPLASH_MS - elapsed));
       }
-      try {
-        await SplashScreen.hideAsync();
-      } catch {
-        // ignore if splash already hidden
-      }
+
       setError(fatalError);
       setIsReady(true);
     }
@@ -147,7 +143,7 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <ErrorBoundary>
         <RoleBasedNavigator />

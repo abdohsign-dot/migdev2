@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -46,9 +46,24 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
   }, [localPackages, localDrivers, localLoading, setAdminPackages, setAdminDrivers, setAdminLoading]);
   
   const isFocused = useIsFocused();
-  // Sync in background on focus so that local dashboard data loads instantly without blocking the UI
+  const lastRefreshAtRef = useRef<number>(0);
+  const didRefreshOnFocusRef = useRef(false);
+
+  // Sync in background on focus without resetting scroll position repeatedly.
+  // This screen is used heavily in navigation; calling refresh on every focus
+  // can cause a one-time scroll "undo"/flicker when coming back.
   useEffect(() => {
     if (!isFocused) return;
+
+    // Only refresh once per mount on focus; subsequent focus changes are handled
+    // via realtime/local updates and manual refresh actions.
+    if (didRefreshOnFocusRef.current) return;
+
+    const now = Date.now();
+    if (now - lastRefreshAtRef.current < 800) return;
+
+    didRefreshOnFocusRef.current = true;
+    lastRefreshAtRef.current = now;
     refresh();
   }, [isFocused, refresh]);
 
