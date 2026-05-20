@@ -52,14 +52,16 @@ import {
   getPackagesLocally,
   storePackageLocally,
   getDriversLocally,
-  storeDriverLocally
+  storeDriverLocally,
+  deletePackageLocally
 } from './localDatabase';
 
 export {
   getPackagesLocally,
   storePackageLocally,
   getDriversLocally,
-  storeDriverLocally
+  storeDriverLocally,
+  deletePackageLocally
 };
 
 // Storage Keys (same as before for compatibility)
@@ -516,6 +518,31 @@ export const syncPackagesFromSupabase = async (
 
     for (const pkg of packages) {
       await storePackageLocally(pkg);
+    }
+
+    if (mode === 'full') {
+      try {
+        // Prune local packages that were deleted from Supabase
+        const localPackages = await getPackagesLocally(driverId, true);
+        const remoteIds = new Set(packages.map(p => p.id));
+        const queue = await getSyncQueue(driverId);
+        const queuedIds = new Set(
+          queue.map(op => {
+            if (op.type === 'create') return op.data?.id;
+            if (op.type === 'update') return op.data?.id;
+            return null;
+          }).filter(Boolean)
+        );
+
+        for (const localPkg of localPackages) {
+          if (!remoteIds.has(localPkg.id) && !queuedIds.has(localPkg.id)) {
+            console.log(`🗑️ Sync Prune: Package ${localPkg.id} (${localPkg.ref_number}) deleted on Supabase, purging locally.`);
+            await deletePackageLocally(localPkg.id);
+          }
+        }
+      } catch (pruneError) {
+        console.error('Error during local package sync pruning:', pruneError);
+      }
     }
 
     await updateLastSyncTime(driverId);

@@ -239,22 +239,27 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
 
   const sortedPackages = React.useMemo(() => {
     return [...filteredPackages].sort((a: any, b: any) => {
+      const aIsActive = ['Pending', 'Assigned', 'In Transit'].includes(a.status);
+      const bIsActive = ['Pending', 'Assigned', 'In Transit'].includes(b.status);
+
+      // 1. Prioritize active packages over completed/final ones (Delivered, Returned, Archived)
+      if (aIsActive && !bIsActive) return -1;
+      if (!aIsActive && bIsActive) return 1;
+
       const aMs = getDeadlineMillis(a);
       const bMs = getDeadlineMillis(b);
 
-      // Put packages with deadlines first (earliest first). Packages without
-      // a deadline go to the end.
-      if (aMs === null && bMs === null) return 0;
+      // 2. Tie-breaker and deadline availability sorting within groups
+      if (aMs === null && bMs === null) {
+        const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return aCreated - bCreated;
+      }
       if (aMs === null) return 1;
       if (bMs === null) return -1;
 
-      if (aMs < bMs) return -1;
-      if (aMs > bMs) return 1;
-
-      // Tie-breaker: earlier created_at first
-      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return aCreated - bCreated;
+      // 3. Sort by deadline asc (earliest/most upcoming deadline first)
+      return aMs - bMs;
     });
   }, [filteredPackages]);
 

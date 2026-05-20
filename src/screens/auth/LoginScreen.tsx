@@ -293,14 +293,17 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
         {/* Admin PIN Modal */}
         <Modal animationType="fade" transparent={true} visible={adminModalVisible} onRequestClose={() => setAdminModalVisible(false)}>
-          <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+            style={styles.modalOverlay}
+          >
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Accès Administrateur</Text>
               <Text style={styles.modalSubtitle}>Code PIN à 8 chiffres</Text>
               <Text style={styles.label}>Code PIN Admin</Text>
               <TextInput
-                style={[styles.input, adminPinError ? styles.inputError : null]}
-                placeholder="12345678"
+                style={[styles.adminInput, adminPinError ? styles.adminInputError : null]}
+                placeholder="••••••••"
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry
                 keyboardType="numeric"
@@ -334,7 +337,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
       </KeyboardAvoidingView>
@@ -534,27 +537,46 @@ const styles = StyleSheet.create({
     }),
   },
   cancelButton: { 
-    paddingVertical: responsiveSize(12, 16), 
-    paddingHorizontal: responsiveSize(16, 20), 
+    paddingHorizontal: 20, 
     borderRadius: BORDER_RADIUS.md, 
-    backgroundColor: '#F3F4F6' 
+    backgroundColor: '#F3F4F6',
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cancelButtonText: { 
     color: '#4B5563', 
     fontWeight: '600',
-    fontSize: FONTS.responsive.body,
+    fontSize: 15,
   },
   submitButton: { 
     backgroundColor: '#10B981', 
-    paddingVertical: responsiveSize(12, 16), 
-    paddingHorizontal: responsiveSize(20, 24), 
+    paddingHorizontal: 24, 
     borderRadius: BORDER_RADIUS.md,
-    height: responsiveSize(44, 52),
+    height: 48,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   submitButtonDisabled: { 
     backgroundColor: '#9CA3AF', 
     opacity: 0.5 
+  },
+  adminInput: { 
+    backgroundColor: '#FFFFFF', 
+    borderWidth: 1, 
+    borderColor: '#D1D5DB', 
+    borderRadius: BORDER_RADIUS.md, 
+    paddingHorizontal: 16, 
+    fontSize: 20, 
+    color: '#111827',
+    height: 50,
+    textAlign: 'center',
+    letterSpacing: 6,
+    fontWeight: 'bold',
+  },
+  adminInputError: {
+    borderColor: '#EF4444',
+    borderWidth: 2,
   },
   pinCounter: { 
     fontSize: FONTS.responsive.small, 

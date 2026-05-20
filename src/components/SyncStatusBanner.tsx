@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, ActivityIndicator, Dimensions } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import useAuthStore from '../store/useAuthStore';
-import { getSyncQueue } from '../utils/localDatabase';
+import { getSyncQueue, processSyncQueue } from '../utils/localDatabase';
 
 const { width } = Dimensions.get('window');
 
@@ -40,15 +40,28 @@ export default function SyncStatusBanner() {
     return () => clearInterval(interval);
   }, [isAuthenticated, userRole, driverId]);
 
-  // Subscribe to NetInfo network changes
+  // Subscribe to NetInfo network changes and trigger immediate sync on reconnect
   useEffect(() => {
+    let wasOffline = false;
+
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const online = state.isConnected && state.isInternetReachable !== false;
+      const online = !!(state.isConnected && state.isInternetReachable !== false);
       setIsOnline(online);
+
+      // Trigger immediate sync queue flush if we reconnected
+      if (online && wasOffline && isAuthenticated) {
+        console.log('📶 NetInfo: Reconnected! Triggering immediate sync queue processing...');
+        const queryDriverId = userRole === 'deliverer' ? (driverId || undefined) : undefined;
+        processSyncQueue(queryDriverId).catch((err) => {
+          console.warn('📶 NetInfo: Reconnected sync failed:', err);
+        });
+      }
+
+      wasOffline = !online;
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isAuthenticated, userRole, driverId]);
 
   // Update overall status state
   useEffect(() => {
@@ -78,34 +91,18 @@ export default function SyncStatusBanner() {
     // 3. We just transitioned back online (show success green, then auto-slide up)
     
     if (status === 'online_synced') {
-      // If we were previously showing offline/syncing, we transitioned to online_synced.
-      // Let's slide up after a pleasant 3 second delay so the user feels "wowed" by the success banner.
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(slideAnim, {
-            toValue: 0, // Keep visible
-            duration: 400,
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacityAnim, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.delay(3000), // Hold success banner
-        Animated.parallel([
-          Animated.timing(slideAnim, {
-            toValue: -120, // Slide back up
-            duration: 400,
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacityAnim, {
-            toValue: 0,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-        ]),
+      // If we transitioned back online and synced up completely, hide the banner immediately
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: -120, // Slide back up
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
       ]).start();
     } else {
       // Slide down immediately for notice states
