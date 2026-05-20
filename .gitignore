@@ -35,13 +35,9 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Android build outputs / local artifacts
-android/app/build/
-android/build/
-android/.gradle/
-android/.idea/
-android/local.properties
-android/keystore.properties
+# Native folders (Expo managed workflow)
+android/
+ios/
 *.keystore
 *.jks
 
