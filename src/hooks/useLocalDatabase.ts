@@ -227,7 +227,7 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
         const localPackages = await getPackagesLocally(undefined, true, LOCAL_PACKAGES_UI_LIMIT);
         setPackages(localPackages);
         setDrivers(await getDriversLocally());
-        setLastSync(await getLastSyncTime(driverId));
+        setLastSync(await getLastSyncTime(undefined));
         return;
       }
 
