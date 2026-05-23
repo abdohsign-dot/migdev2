@@ -32,7 +32,7 @@ import {
 } from '../../utils/responsive';
 
 export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenProps) {
-  const { driverId, logout } = useAuthStore();
+  const { driverId, driverName, driverZone, logout } = useAuthStore();
 
   const assignedMissions = useDriverStore((s) => s.assignedMissions);
   const setAssignedMissions = useDriverStore((s) => s.setAssignedMissions);
@@ -695,10 +695,9 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
       return;
     }
 
-    // Retrieve name and zone for better display in reports
-    const matchedDriver = drivers.find(d => d.id === driverId);
-    const driverDisplayName = matchedDriver 
-      ? `${matchedDriver.name}${matchedDriver.zone ? ` (${matchedDriver.zone})` : ''}` 
+    // Build display name from auth store (populated at login, cleared on logout)
+    const driverDisplayName = driverName
+      ? `${driverName}${driverZone ? ` (${driverZone})` : ''}`
       : `Driver_${driverId}`;
 
     // Show export options (WhatsApp + CSV only)

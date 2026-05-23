@@ -120,7 +120,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
           if (driver.is_active && driver.pin_code === trimmedDriverPin) {
             console.log('✅ PIN verified, logging in');
-            loginAsDriver(driver.id);
+            loginAsDriver(driver.id, driver.name, driver.zone ?? undefined);
           } else if (!driver.is_active) {
             console.log('❌ Driver account is inactive');
             setDriverError('Compte désactivé. Contactez l\'administrateur.');

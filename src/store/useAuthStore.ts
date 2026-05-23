@@ -4,8 +4,10 @@ import { create } from 'zustand';
 interface AuthState {
   userRole: 'deliverer' | 'admin' | null;
   driverId: string | null;
+  driverName: string | null;
+  driverZone: string | null;
   isAuthenticated: boolean;
-  loginAsDriver: (id: string) => void;
+  loginAsDriver: (id: string, name?: string, zone?: string) => void;
   unlockAdmin: () => void;
   logout: () => void;
 }
@@ -13,12 +15,16 @@ interface AuthState {
 const useAuthStore = create<AuthState>((set) => ({
   userRole: null,
   driverId: null,
+  driverName: null,
+  driverZone: null,
   isAuthenticated: false,
 
-  loginAsDriver: (id) => {
+  loginAsDriver: (id, name, zone) => {
     set({ 
       userRole: 'deliverer', 
-      driverId: id, 
+      driverId: id,
+      driverName: name ?? null,
+      driverZone: zone ?? null,
       isAuthenticated: true 
     });
   },
@@ -40,7 +46,9 @@ const useAuthStore = create<AuthState>((set) => ({
     // Clear auth state first
     set({ 
       userRole: null, 
-      driverId: null, 
+      driverId: null,
+      driverName: null,
+      driverZone: null,
       isAuthenticated: false 
     });
     
