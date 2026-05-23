@@ -11,6 +11,7 @@ import AddPackageScreen from '../screens/admin/AddPackageScreen';
 import PackageListScreen from '../screens/admin/PackageListScreen';
 import DriverCredentialsScreen from '../screens/admin/DriverCredentialsScreen';
 import ChangeAdminPinScreen from '../screens/admin/ChangeAdminPinScreen';
+import AdminReportsScreen from '../screens/admin/AdminReportsScreen';
 
 const Stack = createNativeStackNavigator<AdminStackParamList>();
 
@@ -26,6 +27,7 @@ export default function AdminNavigator() {
       <Stack.Screen name="PackageList" component={PackageListScreen} />
       <Stack.Screen name="DriverCredentials" component={DriverCredentialsScreen} />
       <Stack.Screen name="ChangeAdminPin" component={ChangeAdminPinScreen} />
+      <Stack.Screen name="AdminReports" component={AdminReportsScreen} />
     </Stack.Navigator>
   );
 }

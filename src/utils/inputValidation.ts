@@ -97,13 +97,13 @@ export const validateEmail = (email: string): ValidationResult => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   
   if (!email || email.trim() === '') {
-    return { isValid: false, error: 'Email is required' };
+    return { isValid: false, error: 'L\'email est requis' };
   }
 
   const sanitized = sanitizeInput(email);
   
   if (!emailRegex.test(sanitized)) {
-    return { isValid: false, error: 'Invalid email format' };
+    return { isValid: false, error: 'Format d\'email invalide' };
   }
 
   return { isValid: true, sanitizedValue: sanitized };
@@ -114,7 +114,7 @@ export const validateEmail = (email: string): ValidationResult => {
  */
 export const validatePhone = (phone: string): ValidationResult => {
   if (!phone || phone.trim() === '') {
-    return { isValid: false, error: 'Phone number is required' };
+    return { isValid: false, error: 'Le numéro de téléphone est requis' };
   }
 
   const sanitized = sanitizeInput(phone);
@@ -124,11 +124,11 @@ export const validatePhone = (phone: string): ValidationResult => {
   
   // Check if it's numeric and reasonable length
   if (!/^\d+$/.test(cleanPhone)) {
-    return { isValid: false, error: 'Phone number must contain only digits' };
+    return { isValid: false, error: 'Le numéro de téléphone ne doit contenir que des chiffres' };
   }
 
   if (cleanPhone.length < 10 || cleanPhone.length > 15) {
-    return { isValid: false, error: 'Phone number must be 10-15 digits' };
+    return { isValid: false, error: 'Le numéro de téléphone doit comporter entre 10 et 15 chiffres' };
   }
 
   return { isValid: true, sanitizedValue: sanitized };
@@ -140,7 +140,7 @@ export const validatePhone = (phone: string): ValidationResult => {
 export const validateNumber = (input: string, config: ValidationConfig = {}): ValidationResult => {
   if (!input || input.trim() === '') {
     if (config.required) {
-      return { isValid: false, error: 'This field is required' };
+      return { isValid: false, error: 'Ce champ est requis' };
     }
     return { isValid: true, sanitizedValue: config.allowEmpty ? '' : 0 };
   }
@@ -149,15 +149,15 @@ export const validateNumber = (input: string, config: ValidationConfig = {}): Va
   const numValue = parseFloat(sanitized);
 
   if (isNaN(numValue)) {
-    return { isValid: false, error: 'Must be a valid number' };
+    return { isValid: false, error: 'Doit être un nombre valide' };
   }
 
   if (config.minLength && numValue < config.minLength) {
-    return { isValid: false, error: `Value must be at least ${config.minLength}` };
+    return { isValid: false, error: `La valeur doit être d'au moins ${config.minLength}` };
   }
 
   if (config.maxLength && numValue > config.maxLength) {
-    return { isValid: false, error: `Value must be at most ${config.maxLength}` };
+    return { isValid: false, error: `La valeur doit être d'au plus ${config.maxLength}` };
   }
 
   return { isValid: true, sanitizedValue: numValue };
@@ -170,23 +170,23 @@ export const validateText = (input: string, config: ValidationConfig = {}): Vali
   const sanitized = sanitizeInput(input, config);
 
   if (config.required && (!sanitized || sanitized.trim() === '')) {
-    return { isValid: false, error: 'This field is required' };
+    return { isValid: false, error: 'Ce champ est requis' };
   }
 
   if (!config.allowEmpty && sanitized.trim() === '') {
-    return { isValid: false, error: 'This field cannot be empty' };
+    return { isValid: false, error: 'Ce champ ne peut pas être vide' };
   }
 
   if (config.minLength && sanitized.length < config.minLength) {
-    return { isValid: false, error: `Must be at least ${config.minLength} characters` };
+    return { isValid: false, error: `Doit comporter au moins ${config.minLength} caractères` };
   }
 
   if (config.maxLength && sanitized.length > config.maxLength) {
-    return { isValid: false, error: `Must be at most ${config.maxLength} characters` };
+    return { isValid: false, error: `Doit comporter au plus ${config.maxLength} caractères` };
   }
 
   if (config.pattern && !config.pattern.test(sanitized)) {
-    return { isValid: false, error: 'Invalid format' };
+    return { isValid: false, error: 'Format invalide' };
   }
 
   return { isValid: true, sanitizedValue: sanitized };
@@ -209,11 +209,11 @@ export const validateCoordinates = (lat: string, lng: string): ValidationResult 
   });
 
   if (!latResult.isValid) {
-    return { isValid: false, error: 'Invalid latitude (must be -90 to 90)' };
+    return { isValid: false, error: 'Latitude invalide (doit être entre -90 et 90)' };
   }
 
   if (!lngResult.isValid) {
-    return { isValid: false, error: 'Invalid longitude (must be -180 to 180)' };
+    return { isValid: false, error: 'Longitude invalide (doit être entre -180 et 180)' };
   }
 
   return { 
@@ -231,7 +231,7 @@ export const validateCoordinates = (lat: string, lng: string): ValidationResult 
 export const validateDate = (date: string, config: ValidationConfig = {}): ValidationResult => {
   if (!date || date.trim() === '') {
     if (config.required) {
-      return { isValid: false, error: 'Date is required' };
+      return { isValid: false, error: 'La date est requise' };
     }
     return { isValid: true, sanitizedValue: '' };
   }
@@ -248,13 +248,13 @@ export const validateDate = (date: string, config: ValidationConfig = {}): Valid
   const isValidFormat = datePatterns.some(pattern => pattern.test(sanitized));
   
   if (!isValidFormat) {
-    return { isValid: false, error: 'Invalid date format (use YYYY-MM-DD)' };
+    return { isValid: false, error: 'Format de date invalide (utilisez AAAA-MM-JJ)' };
   }
 
   // Check if it's a valid date
   const dateObj = new Date(sanitized);
   if (isNaN(dateObj.getTime())) {
-    return { isValid: false, error: 'Invalid date' };
+    return { isValid: false, error: 'Date invalide' };
   }
 
   return { isValid: true, sanitizedValue: sanitized };
@@ -268,7 +268,7 @@ export const validatePackageData = (packageData: any): ValidationResult => {
 
   // Validate required fields
   if (!packageData.customer_name || packageData.customer_name.trim() === '') {
-    errors.push('Customer name is required');
+    errors.push('Le nom du client est requis');
   }
 
   // Validate customer name
@@ -286,14 +286,14 @@ export const validatePackageData = (packageData: any): ValidationResult => {
   if (packageData.customer_phone) {
     const phoneResult = validatePhone(packageData.customer_phone);
     if (!phoneResult.isValid && phoneResult.error) {
-      errors.push(`Customer phone: ${phoneResult.error}`);
+      errors.push(`Téléphone client : ${phoneResult.error}`);
     }
   }
 
   if (packageData.customer_phone_2) {
     const phone2Result = validatePhone(packageData.customer_phone_2);
     if (!phone2Result.isValid && phone2Result.error) {
-      errors.push(`Customer phone 2: ${phone2Result.error}`);
+      errors.push(`Téléphone client 2 : ${phone2Result.error}`);
     }
   }
 
@@ -306,7 +306,7 @@ export const validatePackageData = (packageData: any): ValidationResult => {
       dataType: 'text'
     });
     if (!addressResult.isValid && addressResult.error) {
-      errors.push(`Address: ${addressResult.error}`);
+      errors.push(`Adresse : ${addressResult.error}`);
     }
   }
 
@@ -318,7 +318,7 @@ export const validatePackageData = (packageData: any): ValidationResult => {
       maxLength: 1000
     });
     if (!weightResult.isValid && weightResult.error) {
-      errors.push(`Weight: ${weightResult.error}`);
+      errors.push(`Poids : ${weightResult.error}`);
     }
   }
 
@@ -329,7 +329,7 @@ export const validatePackageData = (packageData: any): ValidationResult => {
       minLength: 0.01
     });
     if (!priceResult.isValid && priceResult.error) {
-      errors.push(`Price: ${priceResult.error}`);
+      errors.push(`Prix : ${priceResult.error}`);
     }
   }
 
@@ -352,7 +352,7 @@ export const validatePackageData = (packageData: any): ValidationResult => {
       dataType: 'text'
     });
     if (!descResult.isValid && descResult.error) {
-      errors.push(`Description: ${descResult.error}`);
+      errors.push(`Description : ${descResult.error}`);
     }
   }
 
@@ -365,14 +365,14 @@ export const validatePackageData = (packageData: any): ValidationResult => {
       dataType: 'text'
     });
     if (!senderResult.isValid && senderResult.error) {
-      errors.push(`Sender name: ${senderResult.error}`);
+      errors.push(`Nom de l'expéditeur : ${senderResult.error}`);
     }
   }
 
   if (packageData.sender_phone) {
     const senderPhoneResult = validatePhone(packageData.sender_phone);
     if (!senderPhoneResult.isValid && senderPhoneResult.error) {
-      errors.push(`Sender phone: ${senderPhoneResult.error}`);
+      errors.push(`Téléphone de l'expéditeur : ${senderPhoneResult.error}`);
     }
   }
 

@@ -14,6 +14,7 @@ export type AdminStackParamList = {
   AdminPackageList: { archivedOnly?: boolean } | undefined;
   PackageList: undefined;
   ChangeAdminPin: undefined;
+  AdminReports: undefined;
 };
 
 export type DriverStackParamList = {
@@ -33,6 +34,7 @@ export type ModifyDriverScreenProps = NativeStackScreenProps<AdminStackParamList
 export type AddPackageScreenProps = NativeStackScreenProps<AdminStackParamList, 'AddPackage'>;
 export type DriverCredentialsScreenProps = NativeStackScreenProps<AdminStackParamList, 'DriverCredentials'>;
 export type ChangeAdminPinScreenProps = NativeStackScreenProps<AdminStackParamList, 'ChangeAdminPin'>;
+export type AdminReportsScreenProps = NativeStackScreenProps<AdminStackParamList, 'AdminReports'>;
 
 // Driver Screen Props
 export type DelivererTaskScreenProps = NativeStackScreenProps<DriverStackParamList, 'DelivererTask'>;

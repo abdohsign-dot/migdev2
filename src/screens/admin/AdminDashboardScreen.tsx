@@ -149,6 +149,13 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
 
 
           <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: '#4F46E5' }]}
+            onPress={() => navigation.navigate('AdminReports')}
+          >
+            <Text style={styles.actionBtnText}>📊 Rapports et Statistiques</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: '#3B82F6' }]}
             onPress={() => navigation.navigate('AdminPackageList')}
           >
