@@ -67,13 +67,13 @@ const AdminDashboardScreen: React.FC<AdminDashboardScreenProps> = ({ navigation 
     refresh();
   }, [isFocused, refresh]);
 
-  // Use real-time stats from hook
-  const totalPackages = packageStats?.total || adminPackages.length || 0;
+  // Use real-time stats from hook (getPackageStats reads ALL packages without limit)
+  const totalPackages = packageStats?.total ?? adminPackages.length ?? 0;
   const totalDrivers = adminDrivers.length;
-  const pendingPackages = packageStats?.pending || 0;
-  const inTransitPackages = packageStats?.inTransit || 0;
-  const deliveredPackages = packageStats?.delivered || 0;
-  const returnedPackages = packageStats?.returned || 0;
+  const pendingPackages = packageStats?.pending ?? 0;
+  const inTransitPackages = packageStats?.inTransit ?? 0;
+  const deliveredPackages = packageStats?.delivered ?? 0;
+  const returnedPackages = packageStats?.returned ?? 0;
 
   if (adminLoading) {
     return (

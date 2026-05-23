@@ -13,6 +13,7 @@ import {
   Switch,
   ScrollView,
   Linking,
+  Platform,
 } from 'react-native';
 import Share from 'react-native-share';
 import * as Haptics from 'expo-haptics';
@@ -22,8 +23,10 @@ import { useLocalDatabase } from '../../hooks/useLocalDatabase';
 import useAdminStore from '../../store/useAdminStore';
 import { AdminPackageListScreenProps } from '../../types/navigation';
 import ScannerModal from '../../components/ScannerModal';
-import { formatDateTime as formatDateTimeUtil } from '../../utils/dateFormatter';
+import { formatDateTime as formatDateTimeUtil, formatDate } from '../../utils/dateFormatter';
 import { useResponsiveDimensions } from '../../utils/responsive';
+import { QRCodeComponent } from '../../components/QRCodeComponent';
+import { extractQRData, generateQRString } from '../../utils/qrGenerator';
 
 export default function AdminPackageListScreen({ navigation, route }: AdminPackageListScreenProps) {
   const { isLandscape } = useResponsiveDimensions();
@@ -91,6 +94,11 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   // Scanner state
   const [scannerVisible, setScannerVisible] = useState(false);
 
+  // Printable receipt + QR modal (opened from inside the details modal)
+  const [printModalVisible, setPrintModalVisible] = useState(false);
+  const [printModalInstanceKey, setPrintModalInstanceKey] = useState(0);
+  const qrRef = useRef<any>(null);
+
   // Package Details modal state (real-time)
 
   // Edit package form states - all fields from create screen
@@ -115,6 +123,46 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
   const formatDateTime = (value?: string): string => {
     return formatDateTimeUtil(value);
   };
+
+  // ── Printable receipt helpers ─────────────────────────────────────────────
+  const formatWeight = (w: any) => {
+    if (!w && w !== 0) return 'N/A';
+    const s = String(w).trim();
+    if (s === '') return 'N/A';
+    return /kg$/i.test(s) ? s : `${s} kg`;
+  };
+
+  const getReceiptText = (pkg: any) =>
+    `----------------------------------
+DÉTAILS DU COLIS
+----------------------------------
+RÉFÉRENCE : ${pkg.ref_number}
+DATE CRÉA : ${formatDate(pkg.created_at)}
+----------------------------------
+
+EXPÉDITEUR
+----------
+Nom       : ${pkg.sender_name || 'N/A'}
+Société   : ${pkg.sender_company || 'N/A'}
+Téléphone : ${pkg.sender_phone || 'N/A'}
+Date arr. : ${formatDate(pkg.date_of_arrive) || 'N/A'}
+Infos supp: ${pkg.supplement_info || 'N/A'}
+
+DESTINATAIRE
+------------
+Nom       : ${pkg.customer_name || 'N/A'}
+Adresse   : ${pkg.customer_address || 'N/A'}
+Téléphone : ${pkg.customer_phone || 'N/A'}${pkg.customer_phone_2 ? '\nTél 2     : ' + pkg.customer_phone_2 : ''}
+GPS       : ${pkg.gps_lat && pkg.gps_lng ? `${pkg.gps_lat}, ${pkg.gps_lng}` : 'N/A'}
+
+DÉTAILS COLIS
+-------------
+Poids     : ${formatWeight(pkg.weight)}
+Prix      : ${pkg.is_paid ? 'Payé' : ((pkg.price || 0) + ' DH')}
+Statut    : ${statusLabels[pkg.status] || pkg.status}
+Date lim. : ${formatDate(pkg.limit_date) || 'N/A'}${pkg.limit_time ? ` ${pkg.limit_time}` : ''}
+Notes     : ${pkg.description || 'Aucune'}
+----------------------------------`;
 
   // Translate status to French for display
   const translateStatus = (status: string): string => {
@@ -1312,6 +1360,17 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
             )}
 
             <View style={styles.modalButtons}>
+              {selectedPackageForDetails && (
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: '#3B82F6' }]}
+                  onPress={() => {
+                    setPrintModalInstanceKey(k => k + 1);
+                    setPrintModalVisible(true);
+                  }}
+                >
+                  <Text style={styles.modalBtnText}>📄 Fiche</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={[styles.modalBtn, styles.cancelBtn]}
                 onPress={() => {
@@ -1325,6 +1384,98 @@ export default function AdminPackageListScreen({ navigation, route }: AdminPacka
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* ── Printable receipt + QR Modal ─────────────────────────────── */}
+      <Modal
+        key={printModalInstanceKey}
+        visible={printModalVisible}
+        transparent
+        animationType="slide"
+        statusBarTranslucent={true}
+      >
+        <SafeAreaView style={styles.printModalOverlay} edges={['top', 'bottom']}>
+          <View style={[styles.printModalContent, { height: '90%' }]}>
+            <View style={styles.printModalHeader}>
+              <Text style={styles.printModalTitle}>Fiche Colis</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    if (!selectedPackageForDetails) return;
+                    const receiptText = getReceiptText(selectedPackageForDetails);
+                    const qrData = extractQRData(selectedPackageForDetails);
+                    const qrString = generateQRString(qrData);
+                    const qr = qrRef.current;
+                    try {
+                      if (qr?.toDataURL) {
+                        const dataUrl: string | undefined = await qr.toDataURL();
+                        if (dataUrl) {
+                          await Share.open({
+                            title: 'Exporter le QR',
+                            url: dataUrl,
+                            type: 'image/png',
+                            message: `📦 ${selectedPackageForDetails.ref_number}`,
+                          });
+                          return;
+                        }
+                      }
+                    } catch (e) {
+                      console.log('QR export failed, falling back to text:', e);
+                    }
+                    await Share.open({
+                      title: 'Exporter',
+                      message: `${receiptText}\n\nQR_DATA:\n${qrString}`,
+                    });
+                  }}
+                  style={[styles.printModalBtn, { backgroundColor: '#3B82F6', marginRight: 8 }]}
+                >
+                  <Text style={styles.printModalBtnText}>Exporter</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    setPrintModalVisible(false);
+                    setPrintModalInstanceKey(k => k + 1);
+                  }}
+                  style={[styles.printModalBtn, { backgroundColor: '#EF4444' }]}
+                >
+                  <Text style={styles.printModalBtnText}>Fermer</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView
+              style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+              contentContainerStyle={{ padding: 20, paddingBottom: 120, flexGrow: 1 }}
+              nestedScrollEnabled={true}
+              showsVerticalScrollIndicator={true}
+            >
+              {selectedPackageForDetails && (
+                <>
+                  <Text
+                    selectable={true}
+                    style={{
+                      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                      fontSize: 14,
+                      color: '#000000',
+                      lineHeight: 20,
+                      width: '100%',
+                    }}
+                  >
+                    {getReceiptText(selectedPackageForDetails)}
+                  </Text>
+                  <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 16, width: '100%' }}>
+                    <QRCodeComponent
+                      key={printModalInstanceKey}
+                      data={selectedPackageForDetails}
+                      size={200}
+                      getRef={(ref: any) => { qrRef.current = ref; }}
+                    />
+                  </View>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Scanner Modal */}
@@ -1935,6 +2086,49 @@ const styles = StyleSheet.create({
   },
   portraitListContainer: {
     flex: 1,
+  },
+
+  // ── Printable receipt + QR modal styles ───────────────────────────────────
+  printModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  printModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    width: '100%',
+    maxHeight: '100%',
+    overflow: 'visible',
+    flexDirection: 'column',
+  },
+  printModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  printModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  printModalBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  printModalBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
 

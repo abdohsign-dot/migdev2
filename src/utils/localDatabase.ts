@@ -806,6 +806,7 @@ export const updatePackage = async (packageId: string, updates: Partial<Package>
 };
 
 // Real-time package filtering for admin dashboard
+// NOTE: reads ALL packages from storage without any limit so counts are always accurate.
 export const getPackageStats = async (driverId?: string): Promise<{
   total: number;
   pending: number;
@@ -815,15 +816,43 @@ export const getPackageStats = async (driverId?: string): Promise<{
   returned: number;
 }> => {
   try {
-    const packages = await getPackagesLocally(driverId);
+    let storageDriverId = driverId;
+
+    if (driverId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(driverId)) {
+        const localDrivers = await getDriversLocally();
+        const matched = localDrivers.find(d => d.custom_id === driverId || d.id === driverId);
+        if (!matched?.id) {
+          return { total: 0, pending: 0, assigned: 0, inTransit: 0, delivered: 0, returned: 0 };
+        }
+        storageDriverId = matched.id;
+      }
+    }
+
+    // Read ALL packages from storage (no pagination limit) so counts are always correct.
+    let allPackages: Package[] = await getPackagesFromStorage(storageDriverId);
+
+    if (driverId) {
+      const assignedToUuid = storageDriverId!;
+      allPackages = allPackages.filter(
+        pkg => pkg.hidden_by_driver !== true && pkg.assigned_to === assignedToUuid && !pkg.is_archived
+      );
+    } else {
+      // Admin: validate UUIDs and exclude archived
+      allPackages = allPackages.filter(pkg => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(pkg.id) && !pkg.is_archived;
+      });
+    }
 
     return {
-      total: packages.length,
-      pending: packages.filter(p => p.status === 'Pending').length,
-      assigned: packages.filter(p => p.status === 'Assigned').length,
-      inTransit: packages.filter(p => p.status === 'In Transit').length,
-      delivered: packages.filter(p => p.status === 'Delivered').length,
-      returned: packages.filter(p => p.status === 'Returned').length,
+      total: allPackages.length,
+      pending: allPackages.filter(p => p.status === 'Pending').length,
+      assigned: allPackages.filter(p => p.status === 'Assigned').length,
+      inTransit: allPackages.filter(p => p.status === 'In Transit').length,
+      delivered: allPackages.filter(p => p.status === 'Delivered').length,
+      returned: allPackages.filter(p => p.status === 'Returned').length,
     };
   } catch (error) {
     console.error('Error getting package stats:', error);
