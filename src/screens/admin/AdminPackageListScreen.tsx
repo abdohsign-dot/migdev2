@@ -191,7 +191,7 @@ Notes     : ${pkg.description || 'Aucune'}
 
   // Filter packages
   const filteredPackages = adminPackages.filter((pkg: any) => {
-    const isArchived = !!(pkg.is_archived || pkg.archived_at);
+    const isArchived = !!(pkg.is_archived || pkg.archived_at || pkg.status === 'Archived');
 
     // Archive mode first: only archived packages
     if (showArchived) {

@@ -42,6 +42,9 @@ export const FIELD_OWNERSHIP = {
     'limit_date',
     'limit_time',
     'supplement_info',
+    'is_archived',
+    'archived_at',
+    'hidden_by_driver',
     'zone',
     'pricing',
     'client_info',
@@ -54,7 +57,6 @@ export const FIELD_OWNERSHIP = {
     'delivered_at',
     'return_reason',
     'completion_notes',
-    'is_archived',
     'archived_by_driver',
   ] as const,
   shared: [

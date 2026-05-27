@@ -195,12 +195,14 @@ CREATE POLICY "Users can manage own sync metadata" ON sync_metadata
 
 -- Functions and triggers for automatic timestamp updates
 CREATE OR REPLACE FUNCTION update_modified_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+AS $$
 BEGIN
   NEW._last_modified = NOW();
   RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$;
 
 -- Triggers for automatic timestamp updates
 CREATE TRIGGER update_packages_modified 
@@ -213,7 +215,9 @@ CREATE TRIGGER update_drivers_modified
 
 -- Function to handle profile creation on user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+AS $$
 BEGIN
   INSERT INTO public.profiles (id, email)
   VALUES (new.id, new.email);

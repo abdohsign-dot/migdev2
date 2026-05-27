@@ -273,10 +273,14 @@ export const autoUpdatePackagesFromReport = async (
           _last_modified: new Date().toISOString()
         };
 
-        // Add delivery timestamp if delivered
+        // Add delivery timestamp if delivered OR returned (your DB/UI uses delivered_at for both)
         if (task.status === 'Delivered' && task.deliveredAt) {
           updateData.delivered_at = parseFrenchDateTime(task.deliveredAt);
         } else if (task.status === 'Delivered') {
+          updateData.delivered_at = new Date().toISOString();
+        } else if (task.status === 'Returned') {
+          // If driver report didn't include delivered date, still ensure delivered_at exists.
+          // Supabase sync logic expects delivered_at for Returned too.
           updateData.delivered_at = new Date().toISOString();
         }
 
@@ -284,6 +288,7 @@ export const autoUpdatePackagesFromReport = async (
         if (task.status === 'Returned' && task.returnReason) {
           updateData.return_reason = task.returnReason;
         }
+
 
         // Update customer info if provided
         if (task.customerName) updateData.customer_name = task.customerName;

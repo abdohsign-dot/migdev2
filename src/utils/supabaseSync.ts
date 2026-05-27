@@ -6,7 +6,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getCurrentUser } from './supabaseAuth';
-import { 
+import { getDb } from '../supabase/config';
+
+import useAuthStore from '../store/useAuthStore';
+import {
   getPackages,
   getPackagesForAssignee,
   getPackagesSince,
@@ -30,6 +33,8 @@ import {
   getSyncMetadata,
   updateSyncMetadata
 } from './supabaseDatabase';
+
+import { executeRpc } from './supabaseRpc';
 import { Package, Driver, SyncOperation } from '../types';
 import {
   detectPackageConflict,
@@ -223,6 +228,15 @@ export const syncPackagesFromSupabase = async (
       assigneeUuid = targetUuid;
     }
 
+    // If the caller didn't provide driverId, but we are in deliverer role,
+    // scope the pull to the currently logged-in driver to avoid calling
+    // admin_get_packages (which requires p_admin_pin).
+    const state = useAuthStore.getState();
+    if (!assigneeUuid && state.userRole === 'deliverer' && state.driverId) {
+      const targetUuid = await resolveDriverAssigneeUuid(state.driverId);
+      if (targetUuid) assigneeUuid = targetUuid;
+    }
+
     const lastSync = await getLastSyncTime(driverId);
     const useIncremental = !forceFull && !!lastSync;
     let packages: Package[] = [];
@@ -234,11 +248,31 @@ export const syncPackagesFromSupabase = async (
     } else if (assigneeUuid) {
       packages = await getPackagesForAssignee(assigneeUuid);
     } else {
+      // Only admin should reach here. deliverer is now scoped above.
       packages = await getPackages();
     }
 
+    const repairPackageTimestamps = (p: Package): Package => {
+      const nowIso = new Date().toISOString();
+      const repaired: any = { ...p };
+
+      // Keep your existing UI conventions: Returned uses delivered_at too.
+      if (repaired.status === 'Delivered' && !repaired.delivered_at) {
+        repaired.delivered_at = nowIso;
+      }
+      if (repaired.status === 'In Transit' && !repaired.accepted_at) {
+        repaired.accepted_at = nowIso;
+      }
+      if (repaired.status === 'Returned' && !repaired.delivered_at) {
+        repaired.delivered_at = nowIso;
+      }
+
+      return repaired as Package;
+    };
+
     for (const pkg of packages) {
-      await storePackageLocally(pkg);
+      const repaired = repairPackageTimestamps(pkg);
+      await storePackageLocally(repaired);
     }
 
     if (mode === 'full') {
@@ -426,14 +460,40 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
             // code path is to apply pending local writes, not to merge remote
             // state on top of them.
             try {
-              const result = await updatePackage(data.id, updates);
-              if (!result) {
-                console.warn(`[syncQueue] updatePackage returned null for id=${data.id} — package may not exist in Supabase yet`);
+              const state = useAuthStore.getState();
+              
+              if (state.userRole === 'admin') {
+                const rpcData = await executeRpc('admin_update_package', {
+                  p_package_id: data.id,
+                  p_updates: updates,
+                });
+                console.log(`[syncQueue] ✅ Updated package ${data.id} in Supabase (admin)`, {
+                  rpcData,
+                  delivered_at_in_payload: Object.prototype.hasOwnProperty.call(updates, 'delivered_at') ? updates.delivered_at : undefined,
+                  delivered_at_value: (updates as any)?.delivered_at,
+                });
+
+              } else if (state.userRole === 'deliverer') {
+                const rpcData = await executeRpc('driver_update_package', {
+                  p_package_id: data.id,
+                  p_updates: updates,
+                });
+                console.log(`[syncQueue] ✅ Updated package ${data.id} in Supabase (driver)`, {
+                  rpcData,
+                  delivered_at_in_payload: Object.prototype.hasOwnProperty.call(updates, 'delivered_at') ? updates.delivered_at : undefined,
+                  delivered_at_value: (updates as any)?.delivered_at,
+                });
+
               } else {
-                console.log(`[syncQueue] ✅ Updated package ${data.id} in Supabase`);
+                throw new Error('Cannot update package: unknown user role in state.');
               }
             } catch (updateError: any) {
-              console.error(`[syncQueue] ❌ Failed to update package ${data.id}:`, JSON.stringify(updateError));
+              console.error(`[syncQueue] ❌ Failed to update package ${data.id}:`, {
+                type: typeof updateError,
+                message: updateError?.message,
+                stack: updateError?.stack,
+                raw: updateError,
+              });
               throw updateError; // bubble to outer catch to re-queue
             }
           } else if (type === 'create') {
@@ -460,15 +520,26 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
     }
 
     // Only keep failed ops in the queue; successfully processed ones are dropped.
-    await AsyncStorage.setItem(getSyncQueueStorageKey(driverId), JSON.stringify(failedOps));
+    // IMPORTANT: write to the same partition key that getSyncQueue() reads from
+    // (partitioning is based on resolveDriverStorageId()).
+    const resolvedStorageDriverId = await resolveDriverStorageId(driverId);
+    await AsyncStorage.setItem(
+      getSyncQueueStorageKey(resolvedStorageDriverId),
+      JSON.stringify(failedOps)
+    );
     if (failedOps.length > 0) {
       console.warn(`[syncQueue] ⚠️ ${failedOps.length}/${localQueue.length} ops failed and remain in queue for retry`);
     }
 
     // Merge remote changes after upload (incremental — no full-table re-download).
     await syncPackagesFromSupabase(driverId);
+
+    // Drivers can only be synced by admin (RPCs expect p_admin_pin).
     if (!driverId) {
-      await syncDriversFromSupabase();
+      const state = useAuthStore.getState();
+      if (state.userRole === 'admin') {
+        await syncDriversFromSupabase();
+      }
     }
 
     console.log('✅ Local sync queue processed successfully (cleared)');

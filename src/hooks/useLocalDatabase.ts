@@ -62,11 +62,25 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
       await checkSyncQueue();
       setLoading(false);
 
-      // Trigger automatic background synchronization on mount to fetch assigned packages
+      // Trigger automatic background synchronization on mount.
+      // For admin screens, doing a full sync on every mount causes repeated sync loops
+      // (especially after creating/updating drivers). Keep admin auto-sync scoped.
       try {
-        console.log('🔄 Triggering auto-sync on mount for driver:', driverId);
-        const { performFullSync } = require('../utils/supabaseSync');
-        await performFullSync(driverId);
+        const { syncDriversFromSupabase, syncPackagesFromSupabase } = require('../utils/supabaseSync');
+
+        if (isAdmin) {
+          console.log('🔄 Auto-sync on mount (admin): sync drivers only');
+          await syncDriversFromSupabase();
+        } else {
+          if (!driverId) {
+            console.log('ℹ️ Auto-sync on mount (driver) skipped: driverId missing');
+          } else {
+            console.log('🔄 Auto-sync on mount (driver): full sync packages');
+            const { performFullSync } = require('../utils/supabaseSync');
+            await performFullSync(driverId as string);
+          }
+        }
+
         // Reload local data once sync is completed successfully
         await loadLocalData();
       } catch (syncError) {
@@ -261,6 +275,12 @@ export const useLocalDatabase = (options: UseLocalDatabaseOptions = {}) => {
   const syncWithSupabase = async () => {
     try {
       const { performFullSync } = require('../utils/supabaseSync');
+
+      if (!driverId) {
+        console.log('ℹ️ syncWithSupabase skipped: driverId missing');
+        return;
+      }
+
       setSyncing(true);
       await performFullSync(driverId);
       setSyncing(false);

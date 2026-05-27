@@ -603,10 +603,10 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: responsiveSize(8, 10) },
   driverName: { fontSize: FONTS.compact.subtitle, fontWeight: '700', color: '#111827' },
   badge: { backgroundColor: '#E0E7FF', paddingHorizontal: responsiveSize(6, 8), paddingVertical: responsiveSize(2, 3), borderRadius: BORDER_RADIUS.md },
-  badgeText: { color: '#3730A3', fontSize: FONTS.compact.tiny, fontWeight: '600' },
+  badgeText: { color: '#3730A3', fontSize: FONTS.compact.caption, fontWeight: '700' },
   cardBody: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: responsiveSize(4, 6) },
-  infoLabel: { color: '#6B7280', fontSize: FONTS.compact.caption },
-  infoValue: { color: '#111827', fontSize: FONTS.compact.caption, fontWeight: '600' },
+  infoLabel: { color: '#6B7280', fontSize: FONTS.compact.body },
+  infoValue: { color: '#111827', fontSize: FONTS.compact.body, fontWeight: '600' },
   
   footer: { padding: responsiveSize(16, 20), paddingBottom: responsiveSize(40, 50), backgroundColor: '#F9FAFB', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
   addBtn: { backgroundColor: '#10B981', paddingVertical: responsiveSize(14, 16), paddingHorizontal: responsiveSize(20, 24), borderRadius: BORDER_RADIUS.md, alignItems: 'center', alignSelf: 'center', marginBottom: responsiveSize(16, 20), minHeight: 48 },

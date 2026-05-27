@@ -145,8 +145,14 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
     return Number.isNaN(deadline.getTime()) ? null : deadline.getTime();
   };
 
-  const packages = React.useMemo(() => {
-    return [...assignedMissions].sort((a: any, b: any) => {
+  // Ensure we always have an array to operate on for TS + runtime safety.
+  const packages = React.useMemo((): any[] => {
+    const missionsArray = Array.isArray(assignedMissions) ? assignedMissions : [];
+
+    // Always hide packages flagged as hidden_by_driver on the local snapshot.
+    const visible = missionsArray.filter((p: any) => p.hidden_by_driver !== true);
+
+    return visible.sort((a: any, b: any) => {
       const aMs = getDeadlineMillis(a);
       const bMs = getDeadlineMillis(b);
       if (aMs === null && bMs === null) return 0;
@@ -162,9 +168,7 @@ export default function DelivererTaskScreen({ navigation }: DelivererTaskScreenP
 
   // Filter packages based on hide completed tasks setting
   const filteredPackages = hideCompletedTasks
-    ? packages.filter(
-        (p) => p.status !== 'Delivered' && p.status !== 'Returned' && p.status !== 'Archived'
-      )
+    ? packages.filter((p: any) => p.status !== 'Delivered' && p.status !== 'Returned' && p.status !== 'Archived')
     : packages;
 
   // Calculate total price for all packages (not filtered)

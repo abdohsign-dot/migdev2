@@ -18,6 +18,34 @@ DROP FUNCTION IF EXISTS admin_get_drivers_since(TEXT, TIMESTAMPTZ);
 DROP FUNCTION IF EXISTS get_packages_since(TEXT, UUID, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS get_packages_since(TIMESTAMPTZ, UUID, TEXT, TEXT, TEXT);
 
+-- ---------------------------------------------------------------------------
+-- TRIGGER FUNCTIONS (schema helpers — needed before any table triggers run)
+-- ---------------------------------------------------------------------------
+
+-- Automatically updates _last_modified on every row update
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW._last_modified = NOW();
+  RETURN NEW;
+END;
+$$;
+
+-- Creates a matching profile row when a new Supabase auth user signs up
+-- (legacy / optional — app uses PIN-based auth, not email/password)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email)
+  VALUES (new.id, new.email)
+  ON CONFLICT (id) DO NOTHING;
+  RETURN new;
+END;
+$$;
 
 
 
@@ -192,7 +220,7 @@ BEGIN
 
   INSERT INTO packages (
     id, ref_number, customer_name, customer_phone, customer_address,
-    status, assigned_to, notes, zone, _last_modified, _version, created_at
+    status, assigned_to, description, _last_modified, _version, created_at
   )
   SELECT
     COALESCE((p_package->>'id')::UUID, gen_random_uuid()),
@@ -202,8 +230,7 @@ BEGIN
     p_package->>'customer_address',
     COALESCE(p_package->>'status', 'Pending'),
     (p_package->>'assigned_to')::UUID,
-    p_package->>'notes',
-    p_package->>'zone',
+    COALESCE(p_package->>'description', p_package->>'notes'),
     COALESCE(p_package->>'_last_modified', now()::TEXT),
     COALESCE(p_package->>'_version', '1'),
     COALESCE((p_package->>'created_at')::TIMESTAMPTZ, now())
@@ -214,8 +241,7 @@ BEGIN
     customer_address = EXCLUDED.customer_address,
     status           = EXCLUDED.status,
     assigned_to      = EXCLUDED.assigned_to,
-    notes            = EXCLUDED.notes,
-    zone             = EXCLUDED.zone,
+    description      = EXCLUDED.description,
     _last_modified   = EXCLUDED._last_modified,
     _version         = EXCLUDED._version
   RETURNING * INTO v_result;
@@ -241,12 +267,53 @@ BEGIN
     status           = COALESCE(p_updates->>'status',           status::TEXT)::TEXT,
     customer_name    = COALESCE(p_updates->>'customer_name',    customer_name),
     customer_phone   = COALESCE(p_updates->>'customer_phone',   customer_phone),
+    customer_phone_2 = COALESCE(p_updates->>'customer_phone_2', customer_phone_2),
     customer_address = COALESCE(p_updates->>'customer_address', customer_address),
-    assigned_to      = CASE WHEN p_updates ? 'assigned_to' THEN (p_updates->>'assigned_to')::UUID ELSE assigned_to END,
-    notes            = COALESCE(p_updates->>'notes',            notes),
-    zone             = COALESCE(p_updates->>'zone',             zone),
+    assigned_to      = CASE WHEN p_updates ? 'assigned_to'
+                        THEN NULLIF(p_updates->>'assigned_to', '')::UUID
+                        ELSE assigned_to END,
+    assigned_at      = CASE WHEN p_updates ? 'assigned_at'
+                        THEN NULLIF(p_updates->>'assigned_at', '')::timestamptz
+                        ELSE assigned_at END,
+    accepted_at      = CASE WHEN p_updates ? 'accepted_at'
+                        THEN NULLIF(p_updates->>'accepted_at', '')::timestamptz
+                        ELSE accepted_at END,
+    delivered_at     = CASE WHEN p_updates ? 'delivered_at'
+                        THEN NULLIF(p_updates->>'delivered_at', '')::timestamptz
+                        ELSE delivered_at END,
+    return_reason    = COALESCE(p_updates->>'return_reason',    return_reason),
+    description      = COALESCE(p_updates->>'description',      COALESCE(p_updates->>'notes', description)),
+    weight           = COALESCE(p_updates->>'weight',           weight),
+    price            = CASE WHEN p_updates ? 'price'
+                        THEN (p_updates->>'price')::numeric
+                        ELSE price END,
+    is_paid          = CASE WHEN p_updates ? 'is_paid'
+                        THEN (p_updates->>'is_paid')::boolean
+                        ELSE is_paid END,
+    limit_date       = COALESCE(p_updates->>'limit_date',       limit_date),
+    limit_time       = COALESCE(p_updates->>'limit_time',       limit_time),
+    supplement_info  = COALESCE(p_updates->>'supplement_info',  supplement_info),
+    sender_name      = COALESCE(p_updates->>'sender_name',      sender_name),
+    sender_company   = COALESCE(p_updates->>'sender_company',   sender_company),
+    sender_phone     = COALESCE(p_updates->>'sender_phone',     sender_phone),
+    date_of_arrive   = COALESCE(p_updates->>'date_of_arrive',   date_of_arrive),
+    gps_lat          = CASE WHEN p_updates ? 'gps_lat'
+                        THEN NULLIF(p_updates->>'gps_lat', '')::numeric
+                        ELSE gps_lat END,
+    gps_lng          = CASE WHEN p_updates ? 'gps_lng'
+                        THEN NULLIF(p_updates->>'gps_lng', '')::numeric
+                        ELSE gps_lng END,
+    -- Archive fields: use explicit CASE so that NULL resets the value
+    is_archived      = CASE WHEN p_updates ? 'is_archived'
+                        THEN (p_updates->>'is_archived')::boolean
+                        ELSE is_archived END,
+    archived_at      = CASE WHEN p_updates ? 'archived_at'
+                        THEN NULLIF(p_updates->>'archived_at', '')::timestamptz
+                        ELSE archived_at END,
+    hidden_by_driver = CASE WHEN p_updates ? 'hidden_by_driver'
+                        THEN (p_updates->>'hidden_by_driver')::boolean
+                        ELSE hidden_by_driver END,
     _last_modified   = COALESCE((p_updates->>'_last_modified')::timestamptz, now()),
-
     _version         = COALESCE(p_updates->>'_version',         _version)
   WHERE id = p_package_id
   RETURNING * INTO v_result;
@@ -254,6 +321,7 @@ BEGIN
   RETURN v_result;
 END;
 $$;
+
 
 CREATE OR REPLACE FUNCTION admin_delete_package(p_admin_pin TEXT, p_package_id UUID)
 RETURNS VOID
@@ -433,7 +501,7 @@ BEGIN
 
   INSERT INTO packages (
     id, ref_number, customer_name, customer_phone, customer_address,
-    status, assigned_to, notes, zone, _last_modified, _version, created_at
+    status, assigned_to, description, _last_modified, _version, created_at
   )
   SELECT
     COALESCE((p_package->>'id')::UUID, gen_random_uuid()),
@@ -443,8 +511,7 @@ BEGIN
     p_package->>'customer_address',
     COALESCE(p_package->>'status', 'Pending'),
     (p_package->>'assigned_to')::UUID,
-    p_package->>'notes',
-    p_package->>'zone',
+    COALESCE(p_package->>'description', p_package->>'notes'),
     COALESCE(p_package->>'_last_modified', now()::TEXT),
     COALESCE(p_package->>'_version', '1'),
     COALESCE((p_package->>'created_at')::TIMESTAMPTZ, now())
@@ -455,8 +522,7 @@ BEGIN
     customer_address = EXCLUDED.customer_address,
     status           = EXCLUDED.status,
     assigned_to      = EXCLUDED.assigned_to,
-    notes            = EXCLUDED.notes,
-    zone             = EXCLUDED.zone,
+    description      = EXCLUDED.description,
     _last_modified   = EXCLUDED._last_modified,
     _version         = EXCLUDED._version
   RETURNING * INTO v_result;
@@ -465,7 +531,7 @@ BEGIN
 END;
 $$;
 
--- Driver update package (status + notes only — limited scope)
+-- Driver update package (status + description — limited scope)
 CREATE OR REPLACE FUNCTION driver_update_package(
   p_driver_id  TEXT,
   p_pin        TEXT,
@@ -488,10 +554,24 @@ BEGIN
 
   -- Drivers may only update packages assigned to them
   UPDATE packages SET
-    status         = COALESCE(p_updates->>'status',         status::TEXT)::TEXT,
-    notes          = COALESCE(p_updates->>'notes',          notes),
-    _last_modified = COALESCE(p_updates->>'_last_modified', now()::TEXT),
-    _version       = COALESCE(p_updates->>'_version',       _version)
+    status      = COALESCE(p_updates->>'status', status::TEXT)::TEXT,
+    description = COALESCE(
+                    p_updates->>'description',
+                    COALESCE(p_updates->>'notes', description)
+                  ),
+    return_reason = COALESCE(p_updates->>'return_reason', return_reason),
+    hidden_by_driver = CASE WHEN p_updates ? 'hidden_by_driver'
+                        THEN (p_updates->>'hidden_by_driver')::boolean
+                        ELSE hidden_by_driver END,
+    -- If the resulting status becomes 'In Transit', accepted_at must be set
+    accepted_at = CASE
+      WHEN COALESCE(p_updates->>'status', status::TEXT)::TEXT = 'In Transit' THEN
+        COALESCE((p_updates->>'accepted_at')::timestamptz, accepted_at, now())
+      ELSE
+        accepted_at
+    END,
+    _last_modified = COALESCE((p_updates->>'_last_modified')::timestamptz, now()),
+    _version       = COALESCE(p_updates->>'_version', _version)
   WHERE id = p_package_id
     AND assigned_to = v_driver.id
   RETURNING * INTO v_result;
@@ -499,6 +579,46 @@ BEGIN
   IF v_result IS NULL THEN
     RAISE EXCEPTION 'Package not found or not assigned to driver' USING ERRCODE = 'P0002';
   END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- PACKAGE ASSIGNMENT RPC (no admin pin required)
+-- Used by admin assignment sync when user is missing (offline/no-user mode).
+-- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS assign_package_to_driver(UUID, UUID, TEXT, timestamptz);
+
+CREATE OR REPLACE FUNCTION assign_package_to_driver(
+  p_package_id  UUID,
+  p_driver_id   UUID,
+  p_status      TEXT,
+  p_assigned_at TIMESTAMPTZ DEFAULT now()
+)
+RETURNS packages
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result packages;
+  v_status TEXT := COALESCE(p_status, 'Assigned');
+BEGIN
+  -- Only allow statuses allowed by packages.status_check
+  IF v_status NOT IN ('Pending','Assigned','In Transit','Delivered','Returned','Archived') THEN
+    RAISE EXCEPTION 'Invalid status' USING ERRCODE = 'P0003';
+  END IF;
+
+  UPDATE packages
+  SET assigned_to   = p_driver_id,
+      assigned_at   = p_assigned_at,
+      status        = v_status,
+      -- accepted_at must exist when status is In Transit
+      accepted_at   = CASE WHEN v_status = 'In Transit' THEN COALESCE(accepted_at, now()) ELSE accepted_at END,
+      _last_modified = now()
+  WHERE id = p_package_id
+  RETURNING * INTO v_result;
 
   RETURN v_result;
 END;
@@ -639,7 +759,6 @@ BEGIN
     COALESCE((p_driver->>'_last_modified')::timestamptz, now()),
     COALESCE(p_driver->>'_version', '1')
   )
-
   ON CONFLICT (custom_id) DO UPDATE SET
     name           = EXCLUDED.name,
     phone          = EXCLUDED.phone,
@@ -729,7 +848,6 @@ BEGIN
   -- Upsert the sentinel row
   INSERT INTO drivers (name, custom_id, pin_code, is_active, _last_modified, _version)
   VALUES ('System Admin PIN Settings', 'SYSTEM_ADMIN_PIN', p_new_pin, FALSE, now(), '1')
-
   ON CONFLICT (custom_id) DO UPDATE SET
     pin_code = EXCLUDED.pin_code,
     _last_modified = EXCLUDED._last_modified;
@@ -763,6 +881,7 @@ GRANT EXECUTE ON FUNCTION get_packages_since(TEXT, UUID, TEXT, TEXT, TEXT) TO an
 GRANT EXECUTE ON FUNCTION get_packages_by_driver(UUID, TEXT, TEXT, TEXT)  TO anon;
 GRANT EXECUTE ON FUNCTION upsert_package_by_id(JSONB, TEXT, TEXT, TEXT)   TO anon;
 GRANT EXECUTE ON FUNCTION driver_update_package(TEXT, TEXT, UUID, JSONB)  TO anon;
+GRANT EXECUTE ON FUNCTION assign_package_to_driver(UUID, UUID, TEXT, TIMESTAMPTZ) TO anon;
 GRANT EXECUTE ON FUNCTION admin_get_drivers(TEXT)                         TO anon;
 GRANT EXECUTE ON FUNCTION admin_get_active_drivers(TEXT)                  TO anon;
 GRANT EXECUTE ON FUNCTION admin_get_driver(TEXT, TEXT)                    TO anon;

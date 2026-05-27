@@ -233,8 +233,12 @@ const removePackageFromStorage = async (packageId: string, driverId?: string): P
 
 const syncPackageToPartitions = async (pkg: Package): Promise<void> => {
   await upsertPackageInStorage(pkg); // Admin partition
+
   if (pkg.assigned_to) {
-    if (pkg.hidden_by_driver !== true) {
+    // If driver hides this package, ensure it is removed from the driver partition too.
+    if (pkg.hidden_by_driver === true) {
+      await removePackageFromStorage(pkg.id, pkg.assigned_to);
+    } else {
       await upsertPackageInStorage(pkg, pkg.assigned_to);
     }
   }
