@@ -7,7 +7,8 @@ import { LoginScreenProps } from '../../types/navigation';
 import { verifyAdminPin } from '../../utils/adminPin';
 import { getDriverById, verifyDriverPin, isPreStoredDriverId } from '../../config/credentials';
 import { getDriverById as getDriverByIdFromSupabase } from '../../utils/supabaseDatabase';
-import { 
+import { getDb, getAuth } from '../../supabase/config';
+import {
   Responsive, 
   deviceType, 
   orientation, 
@@ -84,7 +85,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           const isValid = await verifyDriverPin(trimmedDriverPin, localDriver.pin_hash);
           
           if (isValid && localDriver.is_active) {
-            loginAsDriver(trimmedId);
+            loginAsDriver(trimmedId, undefined, undefined, trimmedDriverPin);
             setLoading(false);
             return;
           } else if (!localDriver.is_active) {
@@ -108,31 +109,37 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
         }
       }
 
-      // For non-pre-stored IDs, use Supabase (custom IDs created by admin)
+      // For non-pre-stored IDs, use Supabase RPC (custom IDs created by admin)
       try {
-        console.log('🔍 Searching for driver in Supabase:', trimmedId);
-
-        const driver = await getDriverByIdFromSupabase(trimmedId);
+        console.log('🔍 Authenticating driver in Supabase via RPC:', trimmedId);
         
-        if (driver) {
-          console.log('✅ Driver found in Supabase:', trimmedId);
-          console.log('📋 Driver data:', { is_active: driver.is_active, has_pin: !!driver.pin_code });
-
-          if (driver.is_active && driver.pin_code === trimmedDriverPin) {
-            console.log('✅ PIN verified, logging in');
-            loginAsDriver(driver.id, driver.name, driver.zone ?? undefined);
-          } else if (!driver.is_active) {
+        const db = getDb();
+        const { data: driver, error } = await db.rpc('driver_login', {
+          p_driver_id: trimmedId,
+          p_pin: trimmedDriverPin
+        });
+        
+        if (error) {
+          console.error('❌ Supabase RPC auth error:', error);
+          if (error.message.includes('Invalid driver ID or PIN')) {
+            setDriverError('Code PIN incorrect ou ID introuvable.');
+            ToastAndroid.show('Code PIN ou ID incorrect', ToastAndroid.SHORT);
+          } else {
+            setDriverError('Erreur de connexion Supabase.');
+            ToastAndroid.show('Erreur de connexion', ToastAndroid.SHORT);
+          }
+        } else if (driver) {
+          console.log('✅ Driver authenticated in Supabase via RPC:', trimmedId);
+          
+          if (!driver.is_active) {
             console.log('❌ Driver account is inactive');
             setDriverError('Compte désactivé. Contactez l\'administrateur.');
             ToastAndroid.show('Compte désactivé', ToastAndroid.SHORT);
           } else {
-            console.log('❌ PIN incorrect');
-            setDriverError('Code PIN incorrect.');
-            ToastAndroid.show('Code PIN incorrect', ToastAndroid.SHORT);
+            console.log('✅ Logging in driver');
+            loginAsDriver(driver.id, driver.name, driver.zone ?? undefined, trimmedDriverPin);
           }
         } else {
-          console.log('❌ Driver not found in Supabase:', trimmedId);
-          setDriverIdError('ID Livreur introuvable');
           setDriverError('ID Livreur introuvable.');
           ToastAndroid.show('ID Livreur introuvable', ToastAndroid.SHORT);
         }
@@ -211,11 +218,23 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
       console.log('✅ PIN verification result:', isValid);
       
       if (isValid) {
-        console.log('✅ Admin login successful');
+        console.log('✅ Admin login successful locally');
+        
+        // Admin PIN is valid locally, verify with Supabase RPC
+        const db = getDb();
+        const { error } = await db.rpc('admin_login', { p_pin: trimmedAdminPin });
+        
+        if (error) {
+          console.warn('⚠️ Admin PIN verified locally, but Supabase RPC failed:', error);
+          // If RPC fails (e.g. offline), we still unlock because local PIN matched
+        } else {
+          console.log('✅ Admin PIN verified with Supabase RPC');
+        }
+
         setAdminModalVisible(false);
         setAdminPin('');
         setAdminPinError('');
-        unlockAdmin();
+        unlockAdmin(trimmedAdminPin);
         // Stack will automatically unmount and switch to AdminStack
       } else {
         console.log('❌ Admin PIN incorrect');

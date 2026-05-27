@@ -6,9 +6,12 @@ interface AuthState {
   driverId: string | null;
   driverName: string | null;
   driverZone: string | null;
+  driverPin: string | null;
+  adminPin: string | null;
+  supabaseUserId: string | null;
   isAuthenticated: boolean;
-  loginAsDriver: (id: string, name?: string, zone?: string) => void;
-  unlockAdmin: () => void;
+  loginAsDriver: (id: string, name?: string, zone?: string, pin?: string, supabaseUserId?: string) => void;
+  unlockAdmin: (pin?: string, supabaseUserId?: string) => void;
   logout: () => void;
 }
 
@@ -17,21 +20,30 @@ const useAuthStore = create<AuthState>((set) => ({
   driverId: null,
   driverName: null,
   driverZone: null,
+  driverPin: null,
+  adminPin: null,
+  supabaseUserId: null,
   isAuthenticated: false,
 
-  loginAsDriver: (id, name, zone) => {
+  loginAsDriver: (id, name, zone, pin, supabaseUserId) => {
     set({ 
       userRole: 'deliverer', 
       driverId: id,
       driverName: name ?? null,
       driverZone: zone ?? null,
+      driverPin: pin ?? null,
+      adminPin: null,
+      supabaseUserId: supabaseUserId ?? null,
       isAuthenticated: true 
     });
   },
 
-  unlockAdmin: () => {
+  unlockAdmin: (pin, supabaseUserId) => {
     set({ 
-      userRole: 'admin', 
+      userRole: 'admin',
+      adminPin: pin ?? null,
+      driverPin: null, 
+      supabaseUserId: supabaseUserId ?? null,
       isAuthenticated: true 
     });
   },
@@ -49,6 +61,9 @@ const useAuthStore = create<AuthState>((set) => ({
       driverId: null,
       driverName: null,
       driverZone: null,
+      driverPin: null,
+      adminPin: null,
+      supabaseUserId: null,
       isAuthenticated: false 
     });
     
@@ -121,6 +136,19 @@ const useAuthStore = create<AuthState>((set) => ({
         });
       } catch (error) {
         console.log('ℹ️ Firebase auth module not available:', error);
+      }
+      
+      // Sign out from Supabase Auth
+      try {
+        const { getAuth } = require('../supabase/config');
+        const auth = getAuth();
+        auth.signOut().then(() => {
+          console.log('✅ Supabase auth signed out');
+        }).catch((error: any) => {
+          console.log('ℹ️ Supabase sign out issue:', error?.message || error);
+        });
+      } catch (error) {
+        console.log('ℹ️ Supabase auth module not available:', error);
       }
       
       console.log('✅ Async cleanup initiated');

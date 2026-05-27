@@ -51,32 +51,28 @@ export const verifyAdminPin = async (enteredPin: string): Promise<boolean> => {
       }
     }
 
-    // 4. If still not matched, check Supabase (if online - supports fresh device installs!)
+    // 4. If still not matched, verify via admin_login RPC (supports fresh device installs)
     if (!isMatch) {
       try {
         const NetInfo = require('@react-native-community/netinfo').default;
         const netInfo = await NetInfo.fetch();
         if (netInfo.isConnected && netInfo.isInternetReachable !== false) {
-          console.log('🔍 Checking Supabase for custom admin PIN...');
-          const { getDbServiceRole } = require('../supabase/config');
-          const db = getDbServiceRole();
-          const { data, error } = await db
-            .from('drivers')
-            .select('pin')
-            .eq('custom_id', 'SYSTEM_ADMIN_PIN')
-            .maybeSingle();
+          console.log('🔍 Verifying PIN via admin_login RPC...');
+          const { getDb } = require('../supabase/config');
+          const db = getDb();
+          const { error: rpcError } = await db.rpc('admin_login', { p_pin: enteredPin });
 
-          if (data && data.pin && enteredPin === data.pin) {
-            console.log('✅ Admin PIN verified from Supabase row');
-            // Cache locally in SecureStore
+          if (!rpcError) {
+            console.log('✅ Admin PIN verified via Supabase RPC');
+            // Cache locally in SecureStore for offline use
             const { secureAdminOperations } = require('./secureStorage');
-            await secureAdminOperations.cacheAdminPin(data.pin);
-            ADMIN_PIN = data.pin;
+            await secureAdminOperations.cacheAdminPin(enteredPin);
+            ADMIN_PIN = enteredPin;
             return true;
           }
         }
       } catch (supabaseError) {
-        console.log('⚠️ Could not check Supabase for admin PIN:', supabaseError);
+        console.log('⚠️ Could not verify admin PIN via RPC:', supabaseError);
       }
     }
     
@@ -137,61 +133,26 @@ export const changeAdminPin = async (
       console.log('⚠️ Could not update secure storage:', storageError);
     }
     
-    // 3. Update Supabase remotely (and queue locally if offline!)
+    // 3. Update Supabase remotely via admin_update_pin RPC
     try {
-      const payload = {
-        id: '00000000-0000-0000-0000-000000000000',
-        name: 'System Admin PIN Settings',
-        custom_id: 'SYSTEM_ADMIN_PIN',
-        pin: newPin,
-        is_active: false,
-        _version: '1.0',
-        _last_modified: new Date().toISOString()
-      };
-
       const NetInfo = require('@react-native-community/netinfo').default;
       const netInfo = await NetInfo.fetch();
 
       if (netInfo.isConnected && netInfo.isInternetReachable !== false) {
-        // Online: Upsert directly to Supabase
-        console.log('☁️ Syncing new admin PIN to Supabase...');
-        const { getDbServiceRole } = require('../supabase/config');
-        const db = getDbServiceRole();
-        const { error } = await db.from('drivers').upsert(payload);
-        if (error) throw error;
-        console.log('✅ Custom admin PIN synced successfully to Supabase');
-      } else {
-        // Offline: Add to sync queue for auto-syncing later!
-        console.log('📶 Device offline. Queuing admin PIN update in local sync queue...');
-        const { addToSyncQueue } = require('./localDatabase');
-        await addToSyncQueue({
-          type: 'update',
-          collection: 'drivers',
-          data: payload
+        console.log('☁️ Syncing new admin PIN to Supabase via RPC...');
+        const { getDb } = require('../supabase/config');
+        const db = getDb();
+        const { error } = await db.rpc('admin_update_pin', {
+          p_current_pin: currentPin,
+          p_new_pin: newPin,
         });
-        console.log('✅ Admin PIN change queued successfully');
+        if (error) throw error;
+        console.log('✅ Admin PIN updated successfully via Supabase RPC');
+      } else {
+        console.log('📶 Device offline — PIN change saved locally only. Will retry when online.');
       }
     } catch (syncError) {
-      console.log('⚠️ Could not sync admin PIN change to Supabase, queuing locally:', syncError);
-      // Failsafe: queue locally on error
-      try {
-        const { addToSyncQueue } = require('./localDatabase');
-        await addToSyncQueue({
-          type: 'update',
-          collection: 'drivers',
-          data: {
-            id: '00000000-0000-0000-0000-000000000000',
-            name: 'System Admin PIN Settings',
-            custom_id: 'SYSTEM_ADMIN_PIN',
-            pin: newPin,
-            is_active: false,
-            _version: '1.0',
-            _last_modified: new Date().toISOString()
-          }
-        });
-      } catch (qErr) {
-        console.error('❌ Failed to queue admin PIN change locally:', qErr);
-      }
+      console.log('⚠️ Could not update admin PIN via RPC (will retry later):', syncError);
     }
     
     console.log('✅ Admin PIN changed successfully');

@@ -4,7 +4,7 @@
  * Includes backpressure handling to prevent UI overwhelm
  */
 
-import { getDbServiceRole } from '../supabase/config';
+import { getDb } from '../supabase/config';
 import { Package, Driver } from '../types';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { CombinedBackpressureHandler, BackpressureConfig } from './realtimeBackpressure';
@@ -80,7 +80,7 @@ export const listenToPackages = (
   callback: (payload: RealtimePostgresChangesPayload<Package>) => void,
   backpressureConfig: BackpressureConfig = DEFAULT_BACKPRESSURE_CONFIG
 ): RealtimeChannel => {
-  const db = getDbServiceRole();
+  const db = getDb();
   const channelName = 'packages-changes';
   
   // Remove existing subscription if any
@@ -132,7 +132,7 @@ export const listenToDriverPackages = (
   callback: (payload: RealtimePostgresChangesPayload<Package>) => void,
   backpressureConfig: BackpressureConfig = DEFAULT_BACKPRESSURE_CONFIG
 ): RealtimeChannel => {
-  const db = getDbServiceRole();
+  const db = getDb();
   const channelName = `driver-packages-${driverId}`;
   
   // Remove existing subscription if any
@@ -184,7 +184,7 @@ export const listenToPackageStatusChanges = (
   callback: (payload: RealtimePostgresChangesPayload<Package>) => void,
   backpressureConfig: BackpressureConfig = DEFAULT_BACKPRESSURE_CONFIG
 ): RealtimeChannel => {
-  const db = getDbServiceRole();
+  const db = getDb();
   const channelName = 'package-status-changes';
   
   // Remove existing subscription if any
@@ -237,7 +237,7 @@ export const listenToDrivers = (
   callback: (payload: RealtimePostgresChangesPayload<Driver>) => void,
   backpressureConfig: BackpressureConfig = DEFAULT_BACKPRESSURE_CONFIG
 ): RealtimeChannel => {
-  const db = getDbServiceRole();
+  const db = getDb();
   const channelName = 'drivers-changes';
   
   // Remove existing subscription if any
@@ -288,7 +288,7 @@ export const listenToActiveDrivers = (
   callback: (payload: RealtimePostgresChangesPayload<Driver>) => void,
   backpressureConfig: BackpressureConfig = DEFAULT_BACKPRESSURE_CONFIG
 ): RealtimeChannel => {
-  const db = getDbServiceRole();
+  const db = getDb();
   const channelName = 'active-drivers-changes';
   
   // Remove existing subscription if any
@@ -343,7 +343,7 @@ export const listenToSyncOperations = (
   callback: (payload: RealtimePostgresChangesPayload<any>) => void,
   backpressureConfig: BackpressureConfig = DEFAULT_BACKPRESSURE_CONFIG
 ): RealtimeChannel => {
-  const db = getDbServiceRole();
+  const db = getDb();
   const channelName = `sync-operations-${userId}`;
   
   // Remove existing subscription if any

@@ -1,10 +1,22 @@
 /**
  * Supabase Database utilities
- * Replaces Firestore operations with Supabase queries
+ * All public-data operations go through SECURITY DEFINER RPCs.
+ * Direct .from() access is limited to infrastructure tables only
+ * (sync_operations, sync_metadata) which are not user-visible.
  */
 
-import { getDb, getDbServiceRole } from '../supabase/config';
+import { getDb } from '../supabase/config';
+import { executeRpc } from './supabaseRpc';
 import { Package, Driver, SyncOperation } from '../types';
+
+/** Build a JSONB-safe plain object from any package payload. */
+const toJsonb = (obj: Record<string, any>): Record<string, any> => {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+};
 
 // PACKAGES OPERATIONS
 
@@ -13,14 +25,7 @@ import { Package, Driver, SyncOperation } from '../types';
  */
 export const getPackages = async (): Promise<Package[]> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('packages')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return await executeRpc<Package[]>('admin_get_packages');
   } catch (error) {
     console.error('Error getting packages:', error);
     throw error;
@@ -28,107 +33,64 @@ export const getPackages = async (): Promise<Package[]> => {
 };
 
 /**
- * Get all packages with service role (bypasses RLS)
- * Used for migration to check actual package count
+ * Get packages by driver ID (UUID or custom_id).
+ * Resolves custom_id -> UUID via admin_get_driver RPC if needed.
  */
-export const getPackagesServiceRole = async (): Promise<Package[]> => {
+export const getPackagesByDriver = async (driverId: string): Promise<Package[]> => {
   try {
-    const db = getDbServiceRole();
-    const { data, error } = await db
-      .from('packages')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    let assignedToUuid = driverId;
 
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Error getting packages with service role:', error);
-    throw error;
-  }
-};
-
-/** Packages assigned to one driver (service role) — avoids downloading the full table. */
-export const getPackagesServiceRoleForAssignee = async (
-  assignedToUuid: string
-): Promise<Package[]> => {
-  try {
-    const db = getDbServiceRole();
-    const { data, error } = await db
-      .from('packages')
-      .select('*')
-      .eq('assigned_to', assignedToUuid)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Error getting assignee packages with service role:', error);
-    throw error;
-  }
-};
-
-/** Incremental package pull (creates/updates only; run periodic full sync for deletes). */
-export const getPackagesServiceRoleSince = async (
-  sinceIso: string,
-  assignedToUuid?: string
-): Promise<Package[]> => {
-  try {
-    const db = getDbServiceRole();
-    let query = db
-      .from('packages')
-      .select('*')
-      .gte('_last_modified', sinceIso)
-      .order('_last_modified', { ascending: false });
-
-    if (assignedToUuid) {
-      query = query.eq('assigned_to', assignedToUuid);
+    if (!uuidRegex.test(driverId)) {
+      // Resolve custom_id -> UUID via RPC
+      const driver = await executeRpc<Driver | null>('admin_get_driver', { p_driver_id: driverId });
+      if (!driver?.id) return [];
+      assignedToUuid = driver.id;
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+    return await executeRpc<Package[]>('get_packages_by_driver', { p_target_driver_id: assignedToUuid });
   } catch (error) {
-    console.error('Error getting packages since timestamp:', error);
+    console.error('Error getting packages by driver:', error);
     throw error;
   }
 };
 
 /**
- * Get packages by driver ID
+ * Create a new package.
  */
-export const getPackagesByDriver = async (driverId: string): Promise<Package[]> => {
+export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<Package> => {
   try {
-    const db = getDb();
-
-    // Drivers screen may pass `custom_id` (e.g. DRV-XXXX) instead of UUID.
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isUuid = uuidRegex.test(driverId);
-
-    // If not UUID, resolve custom_id -> UUID id first.
-    let assignedToId = driverId;
-    if (!isUuid) {
-      const { data: driverRow, error: driverErr } = await db
-        .from('drivers')
-        .select('id, custom_id')
-        .eq('custom_id', driverId)
-        .maybeSingle();
-
-      if (driverErr) throw driverErr;
-      if (!driverRow?.id) return [];
-
-      assignedToId = driverRow.id;
-    }
-
-    const { data, error } = await db
-      .from('packages')
-      .select('*')
-      .eq('assigned_to', assignedToId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return await executeRpc<Package>('upsert_package_by_id', { p_package: toJsonb(packageData as any) });
   } catch (error) {
-    console.error('Error getting packages by driver:', error);
+    console.error('Error creating package:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a package.
+ */
+export const updatePackage = async (id: string, updates: Partial<Package>): Promise<Package> => {
+  try {
+    const { updated_at: _ua, version: _v, id: _id, ...safeUpdates } = updates as any;
+    return await executeRpc<Package>('admin_update_package', {
+      p_package_id: id,
+      p_updates: toJsonb(safeUpdates),
+    });
+  } catch (error) {
+    console.error('Error updating package:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a package by ID.
+ */
+export const deletePackage = async (id: string): Promise<void> => {
+  try {
+    await executeRpc<void>('admin_delete_package', { p_package_id: id });
+  } catch (error) {
+    console.error('Error deleting package:', error);
     throw error;
   }
 };
@@ -138,362 +100,9 @@ export const getPackagesByDriver = async (driverId: string): Promise<Package[]> 
  */
 export const getPackageById = async (id: string): Promise<Package | null> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('packages')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-    return data;
+    return await executeRpc<Package | null>('get_package_by_id', { p_package_id: id });
   } catch (error) {
-    console.error('Error getting package by ID:', error);
-    throw error;
-  }
-};
-
-/**
- * Get package by reference number
- */
-export const getPackageByRefNumber = async (refNumber: string): Promise<Package | null> => {
-  try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('packages')
-      .select('*')
-      .eq('ref_number', refNumber)
-      .single();
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error getting package by ref number:', error);
-    throw error;
-  }
-};
-
-/**
- * Strip all JS-side fields that do not exist as real database columns in PostgreSQL table `packages`.
- * This prevents PGRST204 schema cache errors.
- */
-export const sanitizePackagePayload = (data: any): any => {
-  const clean = { ...data };
-  
-  // JS model fields that do not exist in PostgreSQL schema
-  delete clean.version;
-  delete clean.updated_at;
-  delete clean.statusHistory;
-  delete clean.status_history;
-  delete clean.changedBy;
-  delete clean.changed_by;
-  delete clean.auditLog;
-  delete clean.audit_log;
-  delete clean.source;
-  delete clean.completion_notes;
-  delete clean.archivedByDriver;
-  delete clean.archivedByAdmin;
-  delete clean._lastModified;
-  delete clean._last_modified;
-  delete clean._version;
-
-  return clean;
-};
-
-/**
- * Create new package
- */
-export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<Package> => {
-  try {
-    const db = getDb();
-    const cleanPackage = sanitizePackagePayload(packageData);
-
-    const { data, error } = await db
-      .from('packages')
-      .insert({
-        ...cleanPackage,
-        _last_modified: new Date().toISOString(),
-        _version: '1',
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '42501') {
-        console.log(`ℹ️ [createPackage] RLS select blocked with code 42501, but insert succeeded. returning local model.`);
-        return {
-          ...packageData,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          version: 1,
-        } as unknown as Package;
-      }
-      throw error;
-    }
-    return data as Package;
-  } catch (error: any) {
-    if (error && error.code === '42501') {
-      console.log(`ℹ️ [createPackage] Caught RLS select block with code 42501, but insert succeeded. returning local model.`);
-      return {
-        ...packageData,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        version: 1,
-      } as unknown as Package;
-    }
-    console.error('Error creating package:', error);
-    throw error;
-  }
-};
-
-/**
- * Create new package with service role (bypasses RLS)
- * Used for migration operations
- */
-export const createPackageServiceRole = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<Package> => {
-  try {
-    const db = getDbServiceRole();
-    const cleanPackage = sanitizePackagePayload(packageData);
-
-    const { data, error } = await db
-      .from('packages')
-      .insert({
-        ...cleanPackage,
-        _last_modified: new Date().toISOString(),
-        _version: '1',
-      })
-      .select();
-
-    if (error) throw error;
-    return data?.[0] as Package;
-  } catch (error) {
-    console.error('Error creating package with service role:', error);
-    throw error;
-  }
-};
-
-/**
- * Upsert package with service role (bypasses RLS)
- * Used for migration operations to handle duplicates
- */
-export const upsertPackageServiceRole = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<Package> => {
-  try {
-    const db = getDbServiceRole();
-    const cleanPackage = sanitizePackagePayload(packageData);
-    const { data, error } = await db
-      .from('packages')
-      .upsert({
-        ...cleanPackage,
-        _last_modified: new Date().toISOString(),
-        _version: '1',
-      }, {
-        onConflict: 'ref_number',
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as Package;
-  } catch (error) {
-    console.error('Error upserting package with service role:', error);
-    throw error;
-  }
-};
-
-/**
- * Upsert package by UUID primary key (id) with service role.
- * This is used to make local sync queue "create" operations idempotent.
- */
-export const upsertPackageServiceRoleById = async (
-  packageData: Omit<Package, 'updated_at' | 'version'> // allow incoming `id`
-): Promise<Package> => {
-  try {
-    const db = getDbServiceRole();
-    const cleanPackage = sanitizePackagePayload(packageData);
-
-    const { data, error } = await db
-      .from('packages')
-      .upsert(
-        {
-          ...cleanPackage,
-          _last_modified: new Date().toISOString(),
-          _version: '1',
-        },
-        {
-          onConflict: 'id',
-        }
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as Package;
-  } catch (error) {
-    console.error('Error upserting package by id with service role:', error);
-    throw error;
-  }
-};
-
-/**
- * Update package (RLS-protected)
- */
-export const updatePackage = async (id: string, updates: Partial<Package>): Promise<Package> => {
-  try {
-    const db = getDb();
-    const cleanUpdates = sanitizePackagePayload(updates);
-    const { data, error } = await db
-      .from('packages')
-      .update({
-        ...cleanUpdates,
-        _last_modified: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '42501') {
-        console.log(`ℹ️ [updatePackage] RLS select blocked with code 42501, but update succeeded.`);
-        return { id, ...updates } as Package;
-      }
-      throw error;
-    }
-    return data;
-  } catch (error: any) {
-    if (error && error.code === '42501') {
-      console.log(`ℹ️ [updatePackage] Caught RLS select block with code 42501, but update succeeded.`);
-      return { id, ...updates } as Package;
-    }
-    console.error('Error updating package:', error);
-    throw error;
-  }
-};
-
-/**
- * Update package (service role, bypasses RLS)
- */
-export const updatePackageServiceRole = async (
-  id: string,
-  updates: Partial<Package>
-): Promise<Package | null> => {
-  try {
-    const db = getDbServiceRole();
-    const cleanUpdates = sanitizePackagePayload(updates);
-
-    // IMPORTANT: do not use `.single()` here.
-    // In some cases Supabase returns 0 rows (PGRST116) and `.single()` throws,
-    // which breaks the sync queue processing.
-    const attemptUpdate = async (column: 'id' | 'ref_number') => {
-      const { data, error } = await db
-        .from('packages')
-        .update({
-          ...cleanUpdates,
-          _last_modified: new Date().toISOString(),
-        })
-        .eq(column, id)
-        .select();
-
-      if (error) throw error;
-
-      return (data && Array.isArray(data)) ? (data[0] as Package) : null;
-    };
-
-    // 1) Try by UUID primary key `id`
-    const byId = await attemptUpdate('id');
-    console.log('[updatePackageServiceRole] attempt by id result:', {
-      id,
-      byIdFound: !!byId,
-    });
-    if (byId) return byId;
-
-    // 2) Fallback: some local queues might store `ref_number` (PKG-xxxxx) as `data.id`
-    // so update by `ref_number` too.
-    const byRef = await attemptUpdate('ref_number');
-    console.log('[updatePackageServiceRole] attempt by ref_number result:', {
-      id,
-      byRefFound: !!byRef,
-    });
-    return byRef ?? null;
-  } catch (error) {
-    console.error('Error updating package (service role):', error);
-    // Re-throw so callers can decide whether to stop the queue
-    throw error;
-  }
-};
-
-/**
- * Delete package (RLS-protected)
- */
-export const deletePackage = async (id: string): Promise<void> => {
-  try {
-    const db = getDb();
-    const { error } = await db
-      .from('packages')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-  } catch (error) {
-    console.error('Error deleting package:', error);
-    throw error;
-  }
-};
-
-/**
- * Delete package with service role (bypasses RLS)
- * Used for offline/no-user sync reconciliation
- */
-export const deletePackageServiceRole = async (id: string): Promise<void> => {
-  try {
-    const db = getDbServiceRole();
-    const { error } = await db
-      .from('packages')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-  } catch (error) {
-    console.error('Error deleting package (service role):', error);
-    throw error;
-  }
-};
-
-/**
- * Delete all packages with service role (bypasses RLS)
- * Used for migration cleanup
- */
-export const deleteAllPackagesServiceRole = async (): Promise<void> => {
-  try {
-    const db = getDbServiceRole();
-    const { error } = await db
-      .from('packages')
-      .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-
-    if (error) throw error;
-    console.log('✅ All packages deleted from Supabase');
-  } catch (error) {
-    console.error('Error deleting all packages with service role:', error);
-    throw error;
-  }
-};
-
-/**
- * Delete all drivers with service role (bypasses RLS)
- * Used for migration cleanup
- */
-export const deleteAllDriversServiceRole = async (): Promise<void> => {
-  try {
-    const db = getDbServiceRole();
-    const { error } = await db
-      .from('drivers')
-      .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-
-    if (error) throw error;
-    console.log('✅ All drivers deleted from Supabase');
-  } catch (error) {
-    console.error('Error deleting all drivers with service role:', error);
+    console.error('Error getting package by id:', error);
     throw error;
   }
 };
@@ -501,20 +110,11 @@ export const deleteAllDriversServiceRole = async (): Promise<void> => {
 // DRIVERS OPERATIONS
 
 /**
- * Get all drivers
+ * Get all drivers (excludes SYSTEM_ADMIN_PIN sentinel row).
  */
 export const getDrivers = async (): Promise<Driver[]> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('drivers')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    const parsed = data || [];
-    // Filter out SYSTEM_ADMIN_PIN record from active lists
-    return parsed.filter(d => d.custom_id !== 'SYSTEM_ADMIN_PIN');
+    return await executeRpc<Driver[]>('admin_get_drivers');
   } catch (error) {
     console.error('Error getting drivers:', error);
     throw error;
@@ -522,56 +122,11 @@ export const getDrivers = async (): Promise<Driver[]> => {
 };
 
 /**
- * Get all drivers with service role (bypasses RLS)
- * Used for migration to check actual driver count
- */
-export const getDriversServiceRole = async (): Promise<Driver[]> => {
-  try {
-    const db = getDbServiceRole();
-    const { data, error } = await db
-      .from('drivers')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Error getting drivers with service role:', error);
-    throw error;
-  }
-};
-
-export const getDriversServiceRoleSince = async (sinceIso: string): Promise<Driver[]> => {
-  try {
-    const db = getDbServiceRole();
-    const { data, error } = await db
-      .from('drivers')
-      .select('*')
-      .gte('_last_modified', sinceIso)
-      .order('_last_modified', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Error getting drivers since timestamp:', error);
-    throw error;
-  }
-};
-
-/**
- * Get active drivers
+ * Get active drivers only.
  */
 export const getActiveDrivers = async (): Promise<Driver[]> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('drivers')
-      .select('*')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return await executeRpc<Driver[]>('admin_get_active_drivers');
   } catch (error) {
     console.error('Error getting active drivers:', error);
     throw error;
@@ -579,43 +134,15 @@ export const getActiveDrivers = async (): Promise<Driver[]> => {
 };
 
 /**
- * Get driver by ID
- * Supports both UUID and custom_id (e.g., DRV-XXXXXX) formats
+ * Get driver by ID. Supports both UUID and custom_id formats.
  */
 export const getDriverById = async (id: string): Promise<Driver | null> => {
   try {
-    const db = getDb();
-    
-    // Check if ID is a UUID or custom_id format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isUuid = uuidRegex.test(id);
-    
-    console.log(`🔍 getDriverById: id=${id}, isUuid=${isUuid}`);
-    
-    let query;
-    if (isUuid) {
-      query = db.from('drivers').select('*').eq('id', id);
-    } else {
-      query = db.from('drivers').select('*').eq('custom_id', id);
-    }
-    
-    const { data, error } = await query.single();
-
-    if (error) {
-      // Supabase: PGRST116 => "0 rows" when using .single()
-      // Treat this as "not found" to avoid throwing and breaking UX.
-      if (error.code === 'PGRST116') {
-        // keep it visible in terminal, but not as an "error" that breaks flows
-        console.log(`ℹ️ Driver not found for id=${id}`);
-        return null;
-      }
-
-      console.error(`❌ Query failed:`, error);
-      throw error;
-    }
-    
-    console.log(`✅ Driver found:`, data);
-    return data;
+    console.log(`🔍 getDriverById: id=${id}`);
+    const driver = await executeRpc<Driver | null>('admin_get_driver', { p_driver_id: id });
+    if (driver) console.log(`✅ Driver found:`, driver);
+    else console.log(`ℹ️ Driver not found for id=${id}`);
+    return driver;
   } catch (error) {
     console.error('Error getting driver by ID:', error);
     throw error;
@@ -623,19 +150,12 @@ export const getDriverById = async (id: string): Promise<Driver | null> => {
 };
 
 /**
- * Get driver by phone
+ * Get driver by phone (searches via admin_search_drivers).
  */
 export const getDriverByPhone = async (phone: string): Promise<Driver | null> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('drivers')
-      .select('*')
-      .eq('phone', phone)
-      .single();
-
-    if (error) throw error;
-    return data;
+    const results = await executeRpc<Driver[]>('admin_search_drivers', { p_query: phone });
+    return results.find(d => d.phone === phone) ?? null;
   } catch (error) {
     console.error('Error getting driver by phone:', error);
     throw error;
@@ -643,26 +163,11 @@ export const getDriverByPhone = async (phone: string): Promise<Driver | null> =>
 };
 
 /**
- * Get driver by custom_id (e.g., DRV-XXXXXX)
+ * Get driver by custom_id (e.g., DRV-XXXXXX).
  */
 export const getDriverByCustomId = async (customId: string): Promise<Driver | null> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('drivers')
-      .select('*')
-      .eq('custom_id', customId)
-      .single();
-
-    if (error) {
-      // Supabase: PGRST116 => "0 rows" when using .single()
-      if (error.code === 'PGRST116') {
-        console.log(`ℹ️ Driver not found for custom_id=${customId}`);
-        return null;
-      }
-      throw error;
-    }
-    return data;
+    return await executeRpc<Driver | null>('admin_get_driver', { p_driver_id: customId });
   } catch (error) {
     console.error('Error getting driver by custom_id:', error);
     throw error;
@@ -670,48 +175,24 @@ export const getDriverByCustomId = async (customId: string): Promise<Driver | nu
 };
 
 /**
- * Create new driver
+ * Create new driver via admin RPC.
  */
 export const createDriver = async (driverData: Omit<Driver, 'id' | 'updated_at' | 'version'>): Promise<Driver> => {
   try {
-    const db = getDb();
-    
-    // Generate custom_id if not provided
+    const raw = driverData as any;
     const generateCustomId = () => {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let result = 'DRV-';
-      for (let i = 0; i < 6; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
+      for (let i = 0; i < 6; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
       return result;
     };
-    
-    // Preserve the caller's local id (e.g. DRV-XXXXXX) as custom_id so that
-    // the local record and the Supabase UUID row stay linked via custom_id.
-    const raw = driverData as any;
     const custom_id = raw.custom_id || raw.id || generateCustomId();
     const version = typeof raw.version === 'number' && !isNaN(raw.version) ? raw.version : 1;
+    const { id: _id, updated_at: _ua, version: _v, custom_id: _cid, ...safeData } = raw;
 
-    // Strip local JS fields; Supabase auto-generates UUID 'id'
-    const { id: _stripId, updated_at: _stripUa, version: _stripV, custom_id: _stripCid, ...safeData } = raw;
-    
-    // Use upsert by custom_id to prevent duplicate rows on retry
-    const { data, error } = await db
-      .from('drivers')
-      .upsert(
-        {
-          ...safeData,
-          custom_id,
-          _last_modified: new Date().toISOString(),
-          _version: String(version),
-        },
-        { onConflict: 'custom_id' }
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    return await executeRpc<Driver>('admin_create_driver', {
+      p_driver: toJsonb({ ...safeData, custom_id, _version: String(version), _last_modified: new Date().toISOString() }),
+    });
   } catch (error) {
     console.error('Error creating driver:', error);
     throw error;
@@ -719,128 +200,15 @@ export const createDriver = async (driverData: Omit<Driver, 'id' | 'updated_at' 
 };
 
 /**
- * Create new driver with service role (bypasses RLS)
- * Used for migration operations and offline sync queue processing
- */
-export const createDriverServiceRole = async (driverData: Omit<Driver, 'id' | 'updated_at' | 'version'>): Promise<Driver> => {
-  try {
-    const db = getDbServiceRole();
-    
-    // Generate custom_id if not provided
-    const generateCustomId = () => {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let result = 'DRV-';
-      for (let i = 0; i < 6; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      return result;
-    };
-    
-    // Preserve the caller's local id (e.g. DRV-XXXXXX) as custom_id so that
-    // the local record and the Supabase UUID row stay linked via custom_id.
-    const raw = driverData as any;
-    const custom_id = raw.custom_id || raw.id || generateCustomId();
-    const version = typeof raw.version === 'number' && !isNaN(raw.version) ? raw.version : 1;
-
-    // Strip local JS fields; Supabase auto-generates UUID 'id'
-    const { id: _stripId, updated_at: _stripUa, version: _stripV, custom_id: _stripCid, ...safeData } = raw;
-    
-    // Use upsert by custom_id so that retried sync-queue 'create' ops
-    // don't insert duplicate rows if the driver was already written.
-    const { data, error } = await db
-      .from('drivers')
-      .upsert(
-        {
-          ...safeData,
-          custom_id,
-          _last_modified: new Date().toISOString(),
-          _version: String(version),
-        },
-        { onConflict: 'custom_id' }
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error creating driver with service role:', error);
-    throw error;
-  }
-};
-
-/**
- * Upsert driver with service role (bypasses RLS)
- * Used for migration operations to handle duplicates
- */
-export const upsertDriverServiceRole = async (driverData: Omit<Driver, 'id' | 'updated_at' | 'version'>): Promise<Driver> => {
-  try {
-    const db = getDbServiceRole();
-    
-    // Generate custom_id if not provided
-    const generateCustomId = () => {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let result = 'DRV-';
-      for (let i = 0; i < 6; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      return result;
-    };
-    
-    // Preserve caller's local id as custom_id for ID linkage
-    const raw = driverData as any;
-    const custom_id = raw.custom_id || raw.id || generateCustomId();
-    const version = typeof raw.version === 'number' && !isNaN(raw.version) ? raw.version : 1;
-
-    // Strip local JS fields; Supabase auto-generates UUID 'id'
-    const { id: _stripId, updated_at: _stripUa, version: _stripV, custom_id: _stripCid, ...safeData } = raw;
-    
-    const { data, error } = await db
-      .from('drivers')
-      .upsert(
-        {
-          ...safeData,
-          custom_id,
-          _last_modified: new Date().toISOString(),
-          _version: String(version),
-        },
-        { onConflict: 'custom_id' }
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data as Driver;
-  } catch (error) {
-    console.error('Error upserting driver with service role:', error);
-    throw error;
-  }
-};
-
-/**
- * Update driver
+ * Update driver via admin RPC.
  */
 export const updateDriver = async (id: string, updates: Partial<Driver>): Promise<Driver> => {
   try {
-    const db = getDb();
-    const { updated_at: _ua, version: _v, id: _stripId, custom_id: _stripCustomId, ...safeUpdates } = updates as any;
-    
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isUuid = uuidRegex.test(id);
-    const column = isUuid ? 'id' : 'custom_id';
-    
-    const { data, error } = await db
-      .from('drivers')
-      .update({
-        ...safeUpdates,
-        _last_modified: new Date().toISOString(),
-      })
-      .eq(column, id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    const { updated_at: _ua, version: _v, id: _id, custom_id: _cid, ...safeUpdates } = updates as any;
+    return await executeRpc<Driver>('admin_update_driver', {
+      p_driver_id: id,
+      p_updates: toJsonb({ ...safeUpdates, _last_modified: new Date().toISOString() }),
+    });
   } catch (error) {
     console.error('Error updating driver:', error);
     throw error;
@@ -848,80 +216,13 @@ export const updateDriver = async (id: string, updates: Partial<Driver>): Promis
 };
 
 /**
- * Update driver with service role (bypasses RLS)
- */
-export const updateDriverServiceRole = async (id: string, updates: Partial<Driver>): Promise<Driver> => {
-  try {
-    const db = getDbServiceRole();
-    const { updated_at: _ua, version: _v, id: _stripId, custom_id: _stripCustomId, ...safeUpdates } = updates as any;
-    
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isUuid = uuidRegex.test(id);
-    const column = isUuid ? 'id' : 'custom_id';
-    
-    // IMPORTANT: don't use .single() directly as it throws PGRST116 if no rows match.
-    // We check if data exists first.
-    const { data, error } = await db
-      .from('drivers')
-      .update({
-        ...safeUpdates,
-        _last_modified: new Date().toISOString(),
-      })
-      .eq(column, id)
-      .select();
-
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      console.log(`ℹ️ updateDriverServiceRole: No driver matched id=${id}`);
-      return updates as Driver; // Or handle as needed
-    }
-    return data[0] as Driver;
-  } catch (error) {
-    console.error('Error updating driver with service role:', error);
-    throw error;
-  }
-};
-
-/**
- * Delete driver
+ * Delete driver via admin RPC.
  */
 export const deleteDriver = async (id: string): Promise<void> => {
   try {
-    const db = getDb();
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isUuid = uuidRegex.test(id);
-    const column = isUuid ? 'id' : 'custom_id';
-    
-    const { error } = await db
-      .from('drivers')
-      .delete()
-      .eq(column, id);
-
-    if (error) throw error;
+    await executeRpc<void>('admin_delete_driver', { p_driver_id: id });
   } catch (error) {
     console.error('Error deleting driver:', error);
-    throw error;
-  }
-};
-
-/**
- * Delete driver with service role (bypasses RLS)
- */
-export const deleteDriverServiceRole = async (id: string): Promise<void> => {
-  try {
-    const db = getDbServiceRole();
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isUuid = uuidRegex.test(id);
-    const column = isUuid ? 'id' : 'custom_id';
-    
-    const { error } = await db
-      .from('drivers')
-      .delete()
-      .eq(column, id);
-
-    if (error) throw error;
-  } catch (error) {
-    console.error('Error deleting driver with service role:', error);
     throw error;
   }
 };
@@ -1058,29 +359,14 @@ export const updateSyncMetadata = async (userId: string, updates: { last_sync?: 
 // UTILITY FUNCTIONS
 
 /**
- * Get package statistics
+ * Get package statistics via admin RPC.
  */
 export const getPackageStats = async () => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('packages')
-      .select('status')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    const stats = {
-      total: data?.length || 0,
-      pending: data?.filter(p => p.status === 'Pending').length || 0,
-      assigned: data?.filter(p => p.status === 'Assigned').length || 0,
-      inTransit: data?.filter(p => p.status === 'In Transit').length || 0,
-      delivered: data?.filter(p => p.status === 'Delivered').length || 0,
-      returned: data?.filter(p => p.status === 'Returned').length || 0,
-      archived: data?.filter(p => p.status === 'Archived').length || 0,
-    };
-
-    return stats;
+    return await executeRpc<{
+      total: number; pending: number; assigned: number;
+      inTransit: number; delivered: number; returned: number; archived: number;
+    }>('admin_get_package_stats');
   } catch (error) {
     console.error('Error getting package stats:', error);
     throw error;
@@ -1088,19 +374,11 @@ export const getPackageStats = async () => {
 };
 
 /**
- * Search packages by reference number or customer name
+ * Search packages by reference number or customer name.
  */
 export const searchPackages = async (query: string): Promise<Package[]> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('packages')
-      .select('*')
-      .or(`ref_number.ilike.%${query}%,customer_name.ilike.%${query}%`)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return await executeRpc<Package[]>('admin_search_packages', { p_query: query });
   } catch (error) {
     console.error('Error searching packages:', error);
     throw error;
@@ -1108,21 +386,79 @@ export const searchPackages = async (query: string): Promise<Package[]> => {
 };
 
 /**
- * Search drivers by name or phone
+ * Search drivers by name or phone.
  */
 export const searchDrivers = async (query: string): Promise<Driver[]> => {
   try {
-    const db = getDb();
-    const { data, error } = await db
-      .from('drivers')
-      .select('*')
-      .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return await executeRpc<Driver[]>('admin_search_drivers', { p_query: query });
   } catch (error) {
     console.error('Error searching drivers:', error);
+    throw error;
+  }
+};
+
+/** Incremental package pull. */
+export const getPackagesSince = async (
+  sinceIso: string,
+  assignedToUuid?: string
+): Promise<Package[]> => {
+  try {
+    return await executeRpc<Package[]>('get_packages_since', { p_since_iso: sinceIso, p_target_driver_id: assignedToUuid });
+  } catch (error) {
+    console.error('Error getting packages since timestamp:', error);
+    throw error;
+  }
+};
+
+/** Packages assigned to one driver. */
+export const getPackagesForAssignee = async (
+  assignedToUuid: string
+): Promise<Package[]> => {
+  try {
+    return await executeRpc<Package[]>('get_packages_by_driver', { p_target_driver_id: assignedToUuid });
+  } catch (error) {
+    console.error('Error getting assignee packages:', error);
+    throw error;
+  }
+};
+
+export const upsertPackageById = async (
+  packageData: any
+): Promise<Package> => {
+  try {
+    const cleanPackage = toJsonb(packageData);
+    return await executeRpc<Package>('upsert_package_by_id', { p_package: cleanPackage });
+  } catch (error) {
+    console.error('Error upserting package by id:', error);
+    throw error;
+  }
+};
+
+export const getDriversSince = async (sinceIso: string): Promise<Driver[]> => {
+  try {
+    return await executeRpc<Driver[]>('admin_get_drivers_since', { p_since_iso: sinceIso });
+  } catch (error) {
+    console.error('Error getting drivers since timestamp:', error);
+    throw error;
+  }
+};
+
+/** Delete all packages */
+export const deleteAllPackages = async (): Promise<void> => {
+  try {
+    await executeRpc('admin_delete_all_packages');
+  } catch (error) {
+    console.error('Error deleting all packages:', error);
+    throw error;
+  }
+};
+
+/** Delete all drivers */
+export const deleteAllDrivers = async (): Promise<void> => {
+  try {
+    await executeRpc('admin_delete_all_drivers');
+  } catch (error) {
+    console.error('Error deleting all drivers:', error);
     throw error;
   }
 };

@@ -4,32 +4,25 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getCurrentUser } from './supabaseAuth';
+import {
+  getCurrentUser } from './supabaseAuth';
 import { 
-  getPackages, 
-  getPackagesServiceRole,
-  getPackagesServiceRoleForAssignee,
-  getPackagesServiceRoleSince,
+  getPackages,
+  getPackagesForAssignee,
+  getPackagesSince,
   getPackageById,
-  getDrivers, 
-  getDriversServiceRole,
-  getDriversServiceRoleSince,
+  getDrivers,
+  getDriversSince,
   getDriverById,
-  createPackage, 
-  createPackageServiceRole,
-  upsertPackageServiceRoleById,
-  updatePackage, 
-  updatePackageServiceRole,
+  createPackage,
+  upsertPackageById,
+  updatePackage,
   deletePackage,
-  deletePackageServiceRole,
-  deleteAllPackagesServiceRole,
-  deleteAllDriversServiceRole,
+  deleteAllPackages,
+  deleteAllDrivers,
   createDriver,
-  createDriverServiceRole,
   updateDriver,
-  updateDriverServiceRole,
   deleteDriver,
-  deleteDriverServiceRole,
   getSyncOperations,
   createSyncOperation,
   markSyncOperationAsSynced,
@@ -96,279 +89,7 @@ const resolveDriverStorageId = async (driverId?: string): Promise<string | undef
 
 // LOCAL STORAGE OPERATIONS (delegated to localDatabase.ts via re-exports)
 
-// MIGRATION FUNCTIONS
 
-/**
- * Check if migration to Supabase has been completed
- */
-export const isMigrationCompleted = async (): Promise<boolean> => {
-  try {
-    const completed = await AsyncStorage.getItem(MIGRATION_COMPLETED_KEY);
-    return completed === 'true';
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Mark migration as completed
- */
-export const markMigrationCompleted = async (): Promise<void> => {
-  try {
-    await AsyncStorage.setItem(MIGRATION_COMPLETED_KEY, 'true');
-  } catch (error) {
-    console.error('Error marking migration as completed:', error);
-  }
-};
-
-/**
- * Reset migration flag (for testing/retrying migration)
- */
-export const resetMigrationFlag = async (): Promise<void> => {
-  try {
-    await AsyncStorage.removeItem(MIGRATION_COMPLETED_KEY);
-    console.log('🔄 Migration flag reset');
-  } catch (error) {
-    console.error('Error resetting migration flag:', error);
-  }
-};
-
-/**
- * Clear all Supabase data (packages and drivers) using service role
- * Use this to reset Supabase before re-migration
- */
-export const clearSupabaseData = async (): Promise<void> => {
-  try {
-    console.log('🧹 Clearing all Supabase data...');
-    
-    // Delete all packages
-    await deleteAllPackagesServiceRole();
-    console.log('✅ All packages deleted from Supabase');
-    
-    // Delete all drivers
-    await deleteAllDriversServiceRole();
-    console.log('✅ All drivers deleted from Supabase');
-    
-    console.log('🧹 Supabase data cleared successfully');
-  } catch (error) {
-    console.error('❌ Error clearing Supabase data:', error);
-    throw error;
-  }
-};
-
-/**
- * Full reset: clear Supabase data and reset migration flag
- */
-export const fullResetForRemigration = async (): Promise<void> => {
-  try {
-    console.log('🔄 Starting full reset for re-migration...');
-    await clearSupabaseData();
-    await resetMigrationFlag();
-    console.log('✅ Full reset complete. Ready for re-migration.');
-  } catch (error) {
-    console.error('❌ Error during full reset:', error);
-    throw error;
-  }
-};
-
-/**
- * Migrate local packages to Supabase
- * This function uploads all local packages to Supabase if Supabase is empty
- */
-export const migrateLocalPackagesToSupabase = async (): Promise<void> => {
-  try {
-    console.log('🔄 Checking if migration to Supabase is needed...');
-
-    // Get local packages first
-    const localPackages = await getPackagesLocally();
-    console.log(`📦 Found ${localPackages.length} local packages`);
-
-    if (localPackages.length === 0) {
-      console.log('📭 No local packages to migrate');
-      await markMigrationCompleted();
-      return;
-    }
-
-    // Check if Supabase already has packages (using service role to bypass RLS)
-    const supabasePackages = await getPackagesServiceRole();
-    console.log(`☁️ Supabase has ${supabasePackages.length} packages`);
-
-    // If Supabase already has any data, skip migration to avoid overwriting
-    if (supabasePackages.length > 0) {
-      console.log('⚠️ Supabase already has data; skipping migration to avoid conflicts');
-      await markMigrationCompleted();
-      return;
-    }
-
-    // Check if migration has already been completed
-    const migrationCompleted = await isMigrationCompleted();
-    if (migrationCompleted) {
-      console.log('⚠️ Migration already marked completed; skipping');
-      return;
-    }
-
-    console.log('🚀 Starting migration of local packages to Supabase (RLS mode)...');
-    let migratedCount = 0;
-    let failedCount = 0;
-
-    for (const pkg of localPackages) {
-      try {
-        // Validate UUID format
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        if (!uuidRegex.test(pkg.id)) {
-          console.log(`⚠️ Skipping package with invalid UUID: ${pkg.id}`);
-          failedCount++;
-          continue;
-        }
-
-        // Prepare package data for Supabase
-        // Convert UUID ref_number to PKG-xxxxxx format if it's a UUID
-        let refNumber = pkg.ref_number;
-        if (uuidRegex.test(refNumber)) {
-          // Generate PKG-xxxxxx format from UUID (use last 6 chars)
-          const shortId = refNumber.split('-').pop()?.slice(-6).toUpperCase() || '000000';
-          refNumber = `PKG-${shortId}`;
-          console.log(`🔄 Converted UUID ref to PKG format: ${refNumber}`);
-        }
-        // Keep existing PKG- format as-is (don't shorten)
-
-        const packageData: any = {
-          ref_number: refNumber,
-          status: pkg.status,
-          customer_name: pkg.customer_name || null,
-          customer_address: pkg.customer_address || null,
-          customer_phone: pkg.customer_phone || null,
-          customer_phone_2: pkg.customer_phone_2 || null,
-          sender_name: pkg.sender_name || null,
-          sender_company: pkg.sender_company || null,
-          sender_phone: pkg.sender_phone || null,
-          date_of_arrive: pkg.date_of_arrive || null,
-          description: pkg.description || null,
-          weight: pkg.weight || null,
-          price: pkg.price || 0,
-          is_paid: pkg.is_paid || false,
-          limit_date: pkg.limit_date || null,
-          limit_time: pkg.limit_time || null,
-          gps_lat: pkg.gps_lat || null,
-          gps_lng: pkg.gps_lng || null,
-          assigned_to: pkg.assigned_to || null,
-          assigned_at: pkg.assigned_at || null,
-          accepted_at: pkg.accepted_at || null,
-          delivered_at: pkg.delivered_at || null,
-          return_reason: pkg.return_reason || null,
-          supplement_info: pkg.supplement_info || null,
-          is_archived: pkg.is_archived || false,
-          archived_at: pkg.archived_at || null,
-          hidden_by_driver: pkg.hidden_by_driver || false,
-          created_at: pkg.created_at || new Date().toISOString(),
-          updated_at: pkg._last_modified || pkg.updated_at || new Date().toISOString(),
-          version: parseInt(pkg._version || pkg.version?.toString() || '1') || 1,
-        };
-
-        // Create package in Supabase (using service role to bypass RLS)
-        await createPackageServiceRole(packageData);
-        migratedCount++;
-        console.log(`✅ Migrated package ${pkg.id} (${refNumber})`);
-      } catch (error) {
-        console.error(`❌ Failed to migrate package ${pkg.id}:`, error);
-        failedCount++;
-      }
-    }
-
-    console.log(`📊 Migration complete: ${migratedCount} succeeded, ${failedCount} failed`);
-
-    // Only mark as completed if at least one package migrated successfully
-    // Otherwise, reset flag to allow retry
-    if (migratedCount > 0) {
-      await markMigrationCompleted();
-    } else {
-      console.log('⚠️ No packages migrated successfully, resetting flag for retry');
-      await resetMigrationFlag();
-    }
-  } catch (error) {
-    console.error('❌ Error during migration to Supabase:', error);
-    // Reset flag to allow retry on error
-    await resetMigrationFlag();
-    // Don't throw error - allow app to continue even if migration fails
-  }
-};
-
-/**
- * Migrate local drivers to Supabase
- * This function uploads all local drivers to Supabase if Supabase is empty
- */
-export const migrateLocalDriversToSupabase = async (): Promise<void> => {
-  try {
-    console.log('🔄 Checking if driver migration to Supabase is needed...');
-
-    // Get local drivers
-    const localDrivers = await getDriversLocally();
-    console.log(`🚚 Found ${localDrivers.length} local drivers`);
-
-    if (localDrivers.length === 0) {
-      console.log('📭 No local drivers to migrate');
-      return;
-    }
-
-    // Check if Supabase already has drivers (using service role to bypass RLS)
-    const supabaseDrivers = await getDriversServiceRole();
-    console.log(`☁️ Supabase has ${supabaseDrivers.length} drivers`);
-
-    // Only migrate if Supabase is empty (to avoid overwriting existing data)
-    if (supabaseDrivers.length > 0) {
-      console.log('⚠️ Supabase already has driver data, skipping migration to avoid conflicts');
-      return;
-    }
-
-    // Migrate drivers to Supabase
-    console.log('🚀 Starting migration of local drivers to Supabase (service role mode)...');
-    let migratedCount = 0;
-    let failedCount = 0;
-
-    for (const driver of localDrivers) {
-      try {
-        console.log(`🔄 Processing driver: ${driver.id} - ${driver.name}`);
-        
-        // Validate UUID format
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        
-        if (!uuidRegex.test(driver.id)) {
-          console.log(`⚠️ Driver has non-UUID ID: ${driver.id}, Supabase will auto-generate UUID`);
-        }
-
-        // Prepare driver data for Supabase (don't include id, let Supabase auto-generate)
-        const driverData: any = {
-          // custom_id: driver.id, // Skip custom_id for now - column might not exist
-          name: driver.name,
-          phone: driver.phone,
-          vehicle_type: driver.vehicle_type,
-          pin_code: driver.pin_code,
-          is_active: driver.is_active !== undefined ? driver.is_active : true,
-          created_at: driver.created_at || new Date().toISOString(),
-          updated_at: driver._last_modified || driver.updated_at || new Date().toISOString(),
-          version: parseInt(driver._version || driver.version?.toString() || '1') || 1,
-        };
-
-        console.log(`📦 Driver data prepared:`, JSON.stringify(driverData, null, 2));
-
-        // Create driver in Supabase (using service role to bypass RLS)
-        // Supabase will auto-generate the UUID
-        const result = await createDriverServiceRole(driverData);
-        migratedCount++;
-        console.log(`✅ Migrated driver ${driver.id} (${driver.name}) -> Supabase UUID: ${result.id}`);
-      } catch (error) {
-        console.error(`❌ Failed to migrate driver ${driver.id}:`, error);
-        console.error(`Error details:`, JSON.stringify(error, null, 2));
-        failedCount++;
-      }
-    }
-
-    console.log(`📊 Driver migration complete: ${migratedCount} succeeded, ${failedCount} failed`);
-  } catch (error) {
-    console.error('❌ Error during driver migration to Supabase:', error);
-    // Don't throw error - allow app to continue even if migration fails
-  }
-};
 
 // Removed stale local definitions in favor of localDatabase.ts re-exports
 
@@ -472,7 +193,7 @@ const resolveDriverAssigneeUuid = async (driverId: string): Promise<string | nul
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (uuidRegex.test(driverId)) return driverId;
 
-  const drivers = await getDriversServiceRole();
+  const drivers = await getDrivers();
   const matched = drivers.find(d => d.custom_id === driverId || d.id === driverId);
   return matched?.id ?? null;
 };
@@ -509,11 +230,11 @@ export const syncPackagesFromSupabase = async (
 
     if (useIncremental && lastSync) {
       mode = 'incremental';
-      packages = await getPackagesServiceRoleSince(lastSync, assigneeUuid);
+      packages = await getPackagesSince(lastSync, assigneeUuid);
     } else if (assigneeUuid) {
-      packages = await getPackagesServiceRoleForAssignee(assigneeUuid);
+      packages = await getPackagesForAssignee(assigneeUuid);
     } else {
-      packages = await getPackagesServiceRole();
+      packages = await getPackages();
     }
 
     for (const pkg of packages) {
@@ -579,8 +300,8 @@ export const syncDriversFromSupabase = async (
     const useIncremental = !forceFull && !!lastSync;
 
     const drivers = useIncremental && lastSync
-      ? await getDriversServiceRoleSince(lastSync)
-      : await getDriversServiceRole();
+      ? await getDriversSince(lastSync)
+      : await getDrivers();
 
     for (const driver of drivers) {
       await storeDriverLocally(driver);
@@ -668,7 +389,7 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
            * Strip JS-model-only fields that the DB schema doesn't have
            * (updated_at, version) and remap them to the real DB columns
            * (_last_modified, _version). Any remaining unknown keys are left
-           * for updatePackageServiceRole to handle.
+           * for updatePackage to handle.
            */
           const normalizeAuditKeys = (obj: any) => {
             if (!obj || typeof obj !== 'object') return obj;
@@ -705,9 +426,9 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
             // code path is to apply pending local writes, not to merge remote
             // state on top of them.
             try {
-              const result = await updatePackageServiceRole(data.id, updates);
+              const result = await updatePackage(data.id, updates);
               if (!result) {
-                console.warn(`[syncQueue] updatePackageServiceRole returned null for id=${data.id} — package may not exist in Supabase yet`);
+                console.warn(`[syncQueue] updatePackage returned null for id=${data.id} — package may not exist in Supabase yet`);
               } else {
                 console.log(`[syncQueue] ✅ Updated package ${data.id} in Supabase`);
               }
@@ -717,10 +438,10 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
             }
           } else if (type === 'create') {
             const pkgData = normalizeAuditKeys(data);
-            await upsertPackageServiceRoleById(pkgData);
+            await upsertPackageById(pkgData);
           } else if (type === 'delete') {
             // delete is RLS-protected; use service role so admin deletion works even in no-user mode.
-            await deletePackageServiceRole(data.id);
+            await deletePackage(data.id);
           } else {
             console.warn(`Unknown package operation type (local): ${type}`);
           }
@@ -862,7 +583,7 @@ const processDriverOperation = async (type: string, data: any, useServiceRole: b
   switch (type) {
     case 'create':
       if (useServiceRole) {
-        await createDriverServiceRole(data);
+        await createDriver(data);
       } else {
         await createDriver(data);
       }
@@ -878,7 +599,7 @@ const processDriverOperation = async (type: string, data: any, useServiceRole: b
       break;
     case 'delete':
       if (useServiceRole) {
-        await deleteDriverServiceRole(data.id);
+        await deleteDriver(data.id);
       } else {
         await deleteDriver(data.id);
       }
@@ -905,7 +626,7 @@ const updateDriverWithConflictDetection = async (
       // Driver doesn't exist remotely - just create it
       console.log(`🚚 Driver ${id} not found remotely, creating...`);
       if (useServiceRole) {
-        await createDriverServiceRole(updates as any);
+        await createDriver(updates as any);
       } else {
         await createDriver(updates as any);
       }
@@ -949,14 +670,14 @@ const updateDriverWithConflictDetection = async (
 
       // Apply the resolved data
       if (useServiceRole) {
-        await updateDriverServiceRole(id, resolution.mergedData);
+        await updateDriver(id, resolution.mergedData);
       } else {
         await updateDriver(id, resolution.mergedData);
       }
     } else {
       // No conflict - apply update normally
       if (useServiceRole) {
-        await updateDriverServiceRole(id, updates);
+        await updateDriver(id, updates);
       } else {
         await updateDriver(id, updates);
       }
@@ -977,8 +698,6 @@ export const performFullSync = async (driverId?: string): Promise<void> => {
     console.log('🔄 Starting full sync...');
 
     // Step 0: Migrate local data to Supabase if needed (only runs once)
-    await migrateLocalPackagesToSupabase();
-    await migrateLocalDriversToSupabase();
 
     // Step 1: Full download from Supabase
     await syncPackagesFromSupabase(driverId, { forceFull: true });
