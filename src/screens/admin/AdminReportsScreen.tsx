@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,17 @@ import { useResponsiveDimensions } from '../../utils/responsive';
 
 export default function AdminReportsScreen({ navigation }: AdminReportsScreenProps) {
   const { isLandscape } = useResponsiveDimensions();
+  const isMountedRef = useRef(true);
+  const exportInProgressRef = useRef(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Prevent any further UI-triggered exports while unmounting.
+      exportInProgressRef.current = false;
+    };
+  }, []);
   const adminPackages = useAdminStore((state) => state.packages);
   const adminDrivers = useAdminStore((state) => state.drivers);
 
@@ -115,11 +126,15 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
   }, [filteredPackages]);
 
   const exportPDF = async () => {
+    if (!isMountedRef.current) return;
+    if (exportInProgressRef.current) return;
+
     if (filteredPackages.length === 0) {
       Alert.alert('Info', 'Aucun colis à exporter pour ces filtres.');
       return;
     }
 
+    exportInProgressRef.current = true;
     try {
       let htmlContent = `
         <html>
@@ -210,20 +225,39 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
 
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
-        base64: false
+        base64: false,
       });
 
-      if (await Sharing.isAvailableAsync()) {
+      if (!isMountedRef.current) return;
+
+      if (!uri || typeof uri !== 'string') {
+        throw new Error('PDF export failed: invalid or empty uri from expo-print.');
+      }
+
+      const sharingAvailable = await Sharing.isAvailableAsync();
+      if (!isMountedRef.current) return;
+
+      if (!sharingAvailable) {
+        Alert.alert('Erreur', 'Le partage n\'est pas disponible sur cet appareil.');
+        return;
+      }
+
+      try {
         await Sharing.shareAsync(uri, {
           mimeType: 'application/pdf',
-          dialogTitle: 'Exporter le Rapport PDF'
+          dialogTitle: 'Exporter le Rapport PDF',
         });
-      } else {
-        Alert.alert('Erreur', 'Le partage n\'est pas disponible sur cet appareil.');
+      } catch (shareError) {
+        if (!isMountedRef.current) return;
+        console.error('PDF share error:', shareError);
+        Alert.alert('Erreur', 'Impossible de partager le PDF.');
       }
     } catch (error) {
+      if (!isMountedRef.current) return;
       console.error('PDF Export error:', error);
       Alert.alert('Erreur', 'Impossible de générer le PDF.');
+    } finally {
+      exportInProgressRef.current = false;
     }
   };
 
@@ -326,7 +360,11 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
           </View>
         </View>
 
-        <TouchableOpacity style={styles.exportButton} onPress={exportPDF}>
+        <TouchableOpacity
+          style={[styles.exportButton, exportInProgressRef.current && { opacity: 0.7 }]}
+          onPress={exportPDF}
+          disabled={exportInProgressRef.current}
+        >
           <Text style={styles.exportButtonText}>📄 Exporter en PDF</Text>
         </TouchableOpacity>
 
