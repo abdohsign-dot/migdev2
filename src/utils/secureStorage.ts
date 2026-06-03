@@ -95,6 +95,36 @@ export const setSecureItem = async (key: string, value: any): Promise<void> => {
 };
 
 /**
+ * Store sensitive data securely WITHOUT adding the key to the tracking index.
+ * Use this for high-volume per-record data (e.g. per-package sensitive fields)
+ * that is managed independently and must not bloat the key index.
+ */
+export const setSecureItemUntracked = async (key: string, value: any): Promise<void> => {
+  try {
+    const safeKey = sanitizeKey(key);
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    await SecureStore.setItemAsync(safeKey, stringValue);
+  } catch (error) {
+    console.error(`❌ Error storing untracked secure item ${key}:`, error);
+    throw new Error(`Failed to store secure data: ${error}`);
+  }
+};
+
+/**
+ * Remove sensitive data securely WITHOUT touching the tracking index.
+ * Pair with setSecureItemUntracked.
+ */
+export const removeSecureItemUntracked = async (key: string): Promise<void> => {
+  try {
+    const safeKey = sanitizeKey(key);
+    await SecureStore.deleteItemAsync(safeKey);
+  } catch (error) {
+    console.error(`❌ Error removing untracked secure item ${key}:`, error);
+    throw new Error(`Failed to remove secure data: ${error}`);
+  }
+};
+
+/**
  * Retrieve sensitive data securely with decryption
  */
 export const getSecureItem = async <T = any>(key: string): Promise<T | null> => {

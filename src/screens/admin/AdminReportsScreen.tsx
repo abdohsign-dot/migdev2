@@ -11,6 +11,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
+type DateTimePickerChangeEvent = {
+  type?: 'set' | 'dismissed' | string;
+};
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import useAdminStore from '../../store/useAdminStore';
@@ -44,6 +48,10 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
   const [showEndPicker, setShowEndPicker] = useState(false);
 
   const onChangeStart = (event: any, selectedDate?: Date) => {
+    if (event?.type === 'dismissed') {
+      setShowStartPicker(false);
+      return;
+    }
     setShowStartPicker(Platform.OS === 'ios');
     if (selectedDate) {
       selectedDate.setHours(0, 0, 0, 0);
@@ -52,6 +60,10 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
   };
 
   const onChangeEnd = (event: any, selectedDate?: Date) => {
+    if (event?.type === 'dismissed') {
+      setShowEndPicker(false);
+      return;
+    }
     setShowEndPicker(Platform.OS === 'ios');
     if (selectedDate) {
       selectedDate.setHours(23, 59, 59, 999);
@@ -283,7 +295,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={startDate}
                 mode="date"
                 display="default"
-                onChange={onChangeStart}
+                onValueChange={onChangeStart}
               />
             )}
             {showStartPicker && Platform.OS === 'android' && (
@@ -291,7 +303,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={startDate}
                 mode="date"
                 display="default"
-                onChange={onChangeStart}
+                onValueChange={onChangeStart}
               />
             )}
           </View>
@@ -307,7 +319,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={endDate}
                 mode="date"
                 display="default"
-                onChange={onChangeEnd}
+                onValueChange={onChangeEnd}
               />
             )}
             {showEndPicker && Platform.OS === 'android' && (
@@ -315,7 +327,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={endDate}
                 mode="date"
                 display="default"
-                onChange={onChangeEnd}
+                onValueChange={onChangeEnd}
               />
             )}
           </View>

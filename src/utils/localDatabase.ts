@@ -6,7 +6,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Package, Driver, SyncOperation } from '../types';
 import { isPreStoredDriverId } from '../config/credentials';
-import { setSecureItem, getSecureItem, removeSecureItem } from './secureStorage';
+import { setSecureItem, getSecureItem, removeSecureItem, setSecureItemUntracked, removeSecureItemUntracked } from './secureStorage';
 
 // Storage Keys
 const ADMIN_PACKAGES_KEY = '@admin:packages';
@@ -114,7 +114,9 @@ const storeSensitiveData = async (packageId: string, sensitive: Record<string, a
   _sensitiveCache.set(packageId, sensitive);
 
   try {
-    await setSecureItem(`@delivry:pkg_sensitive:${packageId}`, sensitive);
+    // Use untracked write — pkg_sensitive keys are managed per-package and
+    // must NOT be added to the global key index (which has a 2 KB size limit).
+    await setSecureItemUntracked(`@delivry:pkg_sensitive:${packageId}`, sensitive);
   } catch (error) {
     console.warn(`⚠️ Could not store sensitive data for package ${packageId}:`, error);
     // Don't throw — local cache still has the data for this session
@@ -150,7 +152,11 @@ const removeSensitiveDataSecurely = async (packageId: string): Promise<void> => 
   _sensitiveCache.delete(packageId);
 
   try {
-    await removeSecureItem(`@delivry:pkg_sensitive:${packageId}`);
+    // Use untracked remove — this key was never added to the index.
+    await removeSecureItemUntracked(`@delivry:pkg_sensitive:${packageId}`);
+    // Also attempt a no-op untrack for any legacy entries that slipped in
+    // before this fix (the call is harmless if the key isn't present).
+    try { await removeSecureItem(`@delivry:pkg_sensitive:${packageId}`); } catch { /* already gone */ }
   } catch (error) {
     console.warn(`⚠️ Could not remove sensitive data for package ${packageId}:`, error);
   }
