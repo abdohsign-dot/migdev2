@@ -18,6 +18,50 @@ const toJsonb = (obj: Record<string, any>): Record<string, any> => {
   return out;
 };
 
+/**
+ * Convert a JS package payload into a DB-ready payload for RPC calls.
+ * Maps local-only fields to the real DB audit columns and strips invalid props.
+ */
+const sanitizePackagePayloadForRpc = (
+  obj: Record<string, any>,
+  options: { stripLastModified?: boolean } = {}
+): Record<string, any> => {
+  const out = toJsonb(obj);
+
+  if (out.updated_at !== undefined && out._last_modified === undefined) {
+    out._last_modified = out.updated_at;
+  }
+  if (out.version !== undefined && out._version === undefined) {
+    out._version = String(out.version);
+  }
+
+  if (out._last_modified !== undefined) {
+    if (out._last_modified instanceof Date) {
+      out._last_modified = out._last_modified.toISOString();
+    } else if (typeof out._last_modified === 'number') {
+      out._last_modified = new Date(out._last_modified).toISOString();
+    } else if (typeof out._last_modified === 'string') {
+      const parsed = Date.parse(out._last_modified);
+      if (!isNaN(parsed)) {
+        out._last_modified = new Date(parsed).toISOString();
+      } else {
+        delete out._last_modified;
+      }
+    } else {
+      delete out._last_modified;
+    }
+  }
+
+  if (options.stripLastModified) {
+    delete out._last_modified;
+  }
+
+  delete out.updated_at;
+  delete out.version;
+
+  return out;
+};
+
 // PACKAGES OPERATIONS
 
 /**
@@ -60,7 +104,8 @@ export const getPackagesByDriver = async (driverId: string): Promise<Package[]> 
  */
 export const createPackage = async (packageData: Omit<Package, 'id' | 'updated_at' | 'version'>): Promise<Package> => {
   try {
-    return await executeRpc<Package>('upsert_package_by_id', { p_package: toJsonb(packageData as any) });
+    const payload = sanitizePackagePayloadForRpc(packageData as any, { stripLastModified: true });
+    return await executeRpc<Package>('upsert_package_by_id', { p_package: payload });
   } catch (error) {
     console.error('Error creating package:', error);
     throw error;
@@ -426,7 +471,20 @@ export const upsertPackageById = async (
   packageData: any
 ): Promise<Package> => {
   try {
-    const cleanPackage = toJsonb(packageData);
+    // Sanitize the payload (normalises updated_at→_last_modified, version→_version, etc.)
+    // We do NOT strip _last_modified here: the upsert_package_by_id Postgres function
+    // references it via p_package->>'_last_modified' (returns `text`). When the key is
+    // absent that expression evaluates to NULL::text which Postgres type-checks against
+    // the `timestamptz` column and raises error 42804. Sending a valid ISO string allows
+    // the function to cast it correctly with ::timestamptz.
+    const cleanPackage = sanitizePackagePayloadForRpc(packageData, { stripLastModified: false });
+
+    // Guarantee _last_modified is always present so the RPC receives a castable value.
+    if (!cleanPackage._last_modified) {
+      cleanPackage._last_modified = new Date().toISOString();
+    }
+
+    console.log('[upsertPackageById] sending _last_modified to upsert_package_by_id:', cleanPackage._last_modified);
     return await executeRpc<Package>('upsert_package_by_id', { p_package: cleanPackage });
   } catch (error) {
     console.error('Error upserting package by id:', error);

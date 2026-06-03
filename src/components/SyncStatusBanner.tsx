@@ -140,7 +140,7 @@ export default function SyncStatusBanner() {
     icon = '⚠️';
   } else if (status === 'syncing') {
     backgroundColor = '#3B82F6'; // Blue
-    text = 'Synchronisation avec Supabase...';
+    text = 'Synchronisation...';
     icon = '🔄';
     showSpinner = true;
   }

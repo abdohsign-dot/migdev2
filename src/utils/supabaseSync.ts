@@ -429,11 +429,14 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
             if (!obj || typeof obj !== 'object') return obj;
             const out: any = { ...obj };
 
+            if (out.updated_at && !out._last_modified) {
+              out._last_modified = out.updated_at;
+            }
+
             // _last_modified is the real DB column; remap from any alias
             if (out._lastModified && !out._last_modified) {
               out._last_modified = out._lastModified;
             }
-            // updated_at is a JS-model field — do NOT pass to Supabase
             delete out._lastModified;
             delete out.updated_at;
 
@@ -497,7 +500,33 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
               throw updateError; // bubble to outer catch to re-queue
             }
           } else if (type === 'create') {
-            const pkgData = normalizeAuditKeys(data);
+            // Always use the CURRENT local state of the package rather than the
+            // stale snapshot captured in the queue entry at creation time.
+            //
+            // Why: the CREATE entry is written once at creation. If the user later
+            // edits the package (adds sender_name, limit_date, etc.), those edits
+            // produce separate UPDATE queue entries that are processed and cleared.
+            // Each time the stuck CREATE entry retries via ON CONFLICT DO UPDATE it
+            // would overwrite the newer Supabase values with the stale nulls from
+            // creation time. Reading the live local state (which has sensitive data
+            // restored from SecureStore) guarantees we push the most up-to-date copy.
+            let latestPkgData = data;
+            try {
+              const { getPackagesLocally } = require('./localDatabase') as {
+                getPackagesLocally: (driverId?: string, includeArchived?: boolean) => Promise<any[]>;
+              };
+              const localPackages = await getPackagesLocally(undefined, true);
+              const fresh = localPackages.find((p: any) => p.id === data?.id);
+              if (fresh) {
+                latestPkgData = fresh;
+                console.log(`[syncQueue:create] using fresh local state for ${data?.id}`);
+              } else {
+                console.warn(`[syncQueue:create] package ${data?.id} not found locally, falling back to queue snapshot`);
+              }
+            } catch (readErr) {
+              console.warn(`[syncQueue:create] could not read fresh local state, falling back to queue snapshot:`, readErr);
+            }
+            const pkgData = normalizeAuditKeys(latestPkgData);
             await upsertPackageById(pkgData);
           } else if (type === 'delete') {
             // delete is RLS-protected; use service role so admin deletion works even in no-user mode.

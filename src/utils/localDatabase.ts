@@ -445,7 +445,7 @@ export const getLastSyncTime = async (driverId?: string): Promise<string> => {
 export const getPackagesLocally = async (
   driverId?: string,
   includeArchived: boolean = false,
-  limit: number = 50,
+  limit?: number,
   offset: number = 0
 ): Promise<Package[]> => {
   try {
@@ -468,7 +468,7 @@ export const getPackagesLocally = async (
 
     let allPackages: Package[] = await getPackagesFromStorage(storageDriverId);
 
-    console.log(`📦 getPackagesLocally: driverId=${driverId}, storageDriverId=${storageDriverId}, includeArchived=${includeArchived}, limit=${limit}, offset=${offset}, totalPackages=${allPackages.length}`);
+    console.log(`📦 getPackagesLocally: driverId=${driverId}, storageDriverId=${storageDriverId}, includeArchived=${includeArchived}, limit=${limit ?? 'all'}, offset=${offset}, totalPackages=${allPackages.length}`);
 
     // Restore sensitive data for all packages
     allPackages = await Promise.all(
@@ -494,8 +494,9 @@ export const getPackagesLocally = async (
       );
 
       // Apply pagination
-      const paginatedPackages = filtered.slice(offset, offset + limit);
-      console.log(`📄 Returning ${paginatedPackages.length} packages (${offset}-${offset + limit})`);
+      const end = limit !== undefined ? offset + limit : undefined;
+      const paginatedPackages = filtered.slice(offset, end);
+      console.log(`📄 Returning ${paginatedPackages.length} packages (${offset}-${end ?? 'end'})`);
 
       return paginatedPackages;
     }
@@ -508,8 +509,9 @@ export const getPackagesLocally = async (
     console.log(`👑 Admin packages: ${filtered.length} (filtered from ${validPackages.length})`);
 
     // Apply pagination
-    const paginatedPackages = filtered.slice(offset, offset + limit);
-    console.log(`📄 Returning ${paginatedPackages.length} packages (${offset}-${offset + limit})`);
+    const end = limit !== undefined ? offset + limit : undefined;
+    const paginatedPackages = filtered.slice(offset, end);
+    console.log(`📄 Returning ${paginatedPackages.length} packages (${offset}-${end ?? 'end'})`);
 
     return paginatedPackages;
   } catch (error) {
