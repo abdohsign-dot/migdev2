@@ -464,12 +464,26 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
             // state on top of them.
             try {
               const state = useAuthStore.getState();
-              
+              const RPC_TIMEOUT_MS = 15_000;
+
+              const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+                Promise.race([
+                  promise,
+                  new Promise<T>((_, reject) =>
+                    setTimeout(() => reject(new Error(`[syncQueue] ⏱ RPC timeout after ${ms}ms: ${label}`)), ms)
+                  ),
+                ]);
+
               if (state.userRole === 'admin') {
-                const rpcData = await executeRpc('admin_update_package', {
-                  p_package_id: data.id,
-                  p_updates: updates,
-                });
+                console.log(`[syncQueue] 🚀 Calling admin_update_package for package ${data.id}`);
+                const rpcData = await withTimeout(
+                  executeRpc('admin_update_package', {
+                    p_package_id: data.id,
+                    p_updates: updates,
+                  }),
+                  RPC_TIMEOUT_MS,
+                  'admin_update_package'
+                );
                 console.log(`[syncQueue] ✅ Updated package ${data.id} in Supabase (admin)`, {
                   rpcData,
                   delivered_at_in_payload: Object.prototype.hasOwnProperty.call(updates, 'delivered_at') ? updates.delivered_at : undefined,
@@ -477,10 +491,15 @@ export const processSyncQueue = async (driverId?: string): Promise<void> => {
                 });
 
               } else if (state.userRole === 'deliverer') {
-                const rpcData = await executeRpc('driver_update_package', {
-                  p_package_id: data.id,
-                  p_updates: updates,
-                });
+                console.log(`[syncQueue] 🚀 Calling driver_update_package for package ${data.id} (driverId=${state.driverId}, hasPin=${!!state.driverPin})`);
+                const rpcData = await withTimeout(
+                  executeRpc('driver_update_package', {
+                    p_package_id: data.id,
+                    p_updates: updates,
+                  }),
+                  RPC_TIMEOUT_MS,
+                  'driver_update_package'
+                );
                 console.log(`[syncQueue] ✅ Updated package ${data.id} in Supabase (driver)`, {
                   rpcData,
                   delivered_at_in_payload: Object.prototype.hasOwnProperty.call(updates, 'delivered_at') ? updates.delivered_at : undefined,

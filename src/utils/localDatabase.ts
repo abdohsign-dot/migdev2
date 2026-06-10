@@ -207,28 +207,33 @@ const writePackagesToStorage = async (packages: Package[], driverId?: string): P
   await AsyncStorage.setItem(getPackageStorageKey(driverId), JSON.stringify(packages));
 };
 
-const upsertPackageInStorage = async (pkg: Package, driverId?: string): Promise<void> => {
+const upsertPackageInStorage = async (pkg: Package, driverId?: string): Promise<Package> => {
   const packages = await getPackagesFromStorage(driverId);
   const index = packages.findIndex(p => p.id === pkg.id);
   const now = new Date().toISOString();
 
+  let mergedPackage: Package;
+
   if (index > -1) {
-    packages[index] = {
+    mergedPackage = {
       ...packages[index],
       ...pkg,
       updated_at: pkg.updated_at || now,
       version: (pkg.version ?? packages[index].version ?? 1) + 1,
     };
+    packages[index] = mergedPackage;
   } else {
-    packages.push({
+    mergedPackage = {
       ...pkg,
       created_at: pkg.created_at || now,
       updated_at: pkg.updated_at || now,
       version: pkg.version || 1,
-    });
+    };
+    packages.push(mergedPackage);
   }
 
   await writePackagesToStorage(packages, driverId);
+  return mergedPackage;
 };
 
 const removePackageFromStorage = async (packageId: string, driverId?: string): Promise<void> => {
@@ -238,14 +243,14 @@ const removePackageFromStorage = async (packageId: string, driverId?: string): P
 };
 
 const syncPackageToPartitions = async (pkg: Package): Promise<void> => {
-  await upsertPackageInStorage(pkg); // Admin partition
+  const mergedPkg = await upsertPackageInStorage(pkg); // Admin partition
 
-  if (pkg.assigned_to) {
+  if (mergedPkg.assigned_to) {
     // If driver hides this package, ensure it is removed from the driver partition too.
-    if (pkg.hidden_by_driver === true) {
-      await removePackageFromStorage(pkg.id, pkg.assigned_to);
+    if (mergedPkg.hidden_by_driver === true) {
+      await removePackageFromStorage(mergedPkg.id, mergedPkg.assigned_to);
     } else {
-      await upsertPackageInStorage(pkg, pkg.assigned_to);
+      await upsertPackageInStorage(mergedPkg, mergedPkg.assigned_to);
     }
   }
 };

@@ -190,11 +190,22 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
              amount = pkg.is_paid ? 0 : (pkg.price || 0);
              driverTotalAmount += amount;
           }
+          
+          const statusTranslations: Record<string, string> = {
+            'Pending': 'En attente',
+            'Assigned': 'Assigné',
+            'In Transit': 'En cours',
+            'Delivered': 'Livré',
+            'Returned': 'Retourné',
+            'Archived': 'Archivé'
+          };
+          const translatedStatus = pkg.status ? (statusTranslations[pkg.status] || pkg.status) : '';
+
           return `
             <tr>
               <td>${pkg.ref_number}</td>
               <td>${pkg.customer_name || '-'}</td>
-              <td>${pkg.status}</td>
+              <td>${translatedStatus}</td>
               <td>${pkg.price || 0} DH ${pkg.is_paid ? '(Payé)' : ''}</td>
               <td>${amount} DH</td>
             </tr>
@@ -295,7 +306,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={startDate}
                 mode="date"
                 display="default"
-                onValueChange={onChangeStart}
+                onChange={onChangeStart}
               />
             )}
             {showStartPicker && Platform.OS === 'android' && (
@@ -303,7 +314,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={startDate}
                 mode="date"
                 display="default"
-                onValueChange={onChangeStart}
+                onChange={onChangeStart}
               />
             )}
           </View>
@@ -319,7 +330,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={endDate}
                 mode="date"
                 display="default"
-                onValueChange={onChangeEnd}
+                onChange={onChangeEnd}
               />
             )}
             {showEndPicker && Platform.OS === 'android' && (
@@ -327,7 +338,7 @@ export default function AdminReportsScreen({ navigation }: AdminReportsScreenPro
                 value={endDate}
                 mode="date"
                 display="default"
-                onValueChange={onChangeEnd}
+                onChange={onChangeEnd}
               />
             )}
           </View>
